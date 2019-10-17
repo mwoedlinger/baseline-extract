@@ -1,15 +1,16 @@
 import os
 from torch.utils.data import Dataset
 from PIL import Image
+import numpy as np
 from .xml_parser import XMLParser
 
 
-class baselineDataset(Dataset):
+class BaselineDataset(Dataset):
     """
     A dataset that generates data for a pytorch model.
     """
-    def __init__(self, input_folder: str, inf_type: str, parameters: dict):
-        self.input_folder = input_folder
+    def __init__(self, inf_type: str, parameters: dict):
+        self.input_folder = os.path.join(parameters['input_folder'], inf_type)
         self.inf_type = inf_type
         self.images, self.labels = self.list_files()
         self.max_side = parameters['max_side']
@@ -21,9 +22,21 @@ class baselineDataset(Dataset):
         image = Image.open(self.images[idx])
         parser = XMLParser(self.labels[idx])
         parser.scale(self.max_side)
-        label = parser.get_baselines()
+        baselines = parser.get_baselines()
 
-        sample = {'image': image, 'label': label}
+        start_points = []
+        start_angles = []
+
+        for bl in label:
+            p0 = bl[0].get_as_list()
+            p1 = bl[1].get_as_list()
+
+            angle = np.arctan((p0[1]-p1[1])/(p0[0]-p0[0]))
+
+            start_points.append(p0)
+            start_angles.append(angle)
+
+        sample = {'image': image, 'baselines': baselines, 'start_points': start_points, 'start_angles': start_angles}
 
         return sample
 

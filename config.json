@@ -1,0 +1,14 @@
+{
+  "exp_name": "default",
+  "log_dir": "tensorboard",
+  "output_folder": "trained_models",
+  "gpu": 3,
+  "lr": 4e-4,
+  "batch_size": 1,
+  "epochs": 10,
+  "eval_epoch": 2,
+  "data": {
+    "input_folder": 'data/cBAD-ICDAR2019',
+    "max_side": 1000
+  }
+}
