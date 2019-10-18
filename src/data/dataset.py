@@ -39,8 +39,11 @@ class BaselineDataset(Dataset):
             p0 = bl[0].get_as_list()
             p1 = bl[1].get_as_list()
 
-            angle = np.arctan((p0[1]-p1[1])/(p0[0]-p1[0]))
-            #TODO: ^^ make sure that the angle doesn't flip for vertical baselines
+            if (np.abs(p0[0]-p1[0]) < 0.00001):
+                angle = np.pi/2
+            else:
+                angle = np.arctan((p0[1]-p1[1])/(p0[0]-p1[0]))
+            #TODO: ^ make sure that the angle doesn't flip for vertical baselines
 
             start_points.append(p0)
             start_angles.append(angle)
@@ -48,7 +51,7 @@ class BaselineDataset(Dataset):
         baselines = [[p.get_as_list() for p in bl] for bl in baselines]
 
         sample = {'image': self.transforms(image),
-                  'baselines': torch.tensor(baselines),
+                  'baselines': baselines,
                   'start_points': torch.tensor(start_points),
                   'start_angles': torch.tensor(start_angles)}
 

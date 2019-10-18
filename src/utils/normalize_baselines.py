@@ -8,7 +8,7 @@ def d2(x1, y1, x2, y2):
     return torch.sqrt(pow(x1 - x2, 2) + pow(y1 - y2, 2))
 
 
-def normalize_baselines(bl: list, segment_length: float):
+def normalize_baselines(baseline: list, segment_length: float):
     """
     Takes a baseline as input and returns a baseline that consists of normalized line segments.
     That means that the baseline consists of a list of points where each point is exactly 'segment_length' away
@@ -17,6 +17,8 @@ def normalize_baselines(bl: list, segment_length: float):
     :param segment_length: The distance between two points.
     :return: a baseline
     """
+
+    bl = torch.tensor(baseline)
 
     new_bl = [bl[0]]
     idx = 1  # Index of next baseline point of original label
@@ -44,4 +46,4 @@ def normalize_baselines(bl: list, segment_length: float):
                     done = True
         if done:
             break
-    return new_bl
+    return torch.cat([l.unsqueeze(0) for l in new_bl], dim=0)

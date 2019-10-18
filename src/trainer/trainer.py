@@ -1,10 +1,12 @@
 import os
 import time
 import copy
-import tqdm
+from tqdm import tqdm
 import torch
+from torch.utils.tensorboard import SummaryWriter
 from ..data.dataset import BaselineDataset
 from ..utils.normalize_baselines import normalize_baselines
+from ..model.line_rider import LineRider
 
 class Trainer:
     """
@@ -38,11 +40,10 @@ class Trainer:
         """
 
         if not weights:
-            raise  NotImplementedError
+            model_ft = LineRider()
         else:
             model_ft = torch.load(weights, map_location=self.device)
 
-        #TODO: write proper criterion. The baselines consist of pairs of number not just a single list of numbers.
         criterion = torch.nn.MSELoss()
 
         return [model_ft, criterion]
@@ -67,7 +68,7 @@ class Trainer:
         """
 
 
-        shuffle = {'train': True, 'eval': False}
+        shuffle = {'train': False, 'eval': False}#TODO: change shuffle back to True for train
         batch_size_dict = {'train': self.batch_size, 'eval': 1}
 
         image_datasets = {inf_type: BaselineDataset(inf_type=inf_type,
@@ -89,12 +90,12 @@ class Trainer:
         for batch in tqdm(self.dataloaders['train']):
 
             image = batch['image']
-            baselines = batch['baselines'][0]
+            baselines = batch['baselines'] #Does not have a batch dimension because it is a list
+            # TODO: ^ fix? Right now it only works with batch size 1
             start_points = batch['start_points'][0]
             start_angles = batch['start_angles'][0]
 
             image = image.to(self.device)
-            baselines = baselines.to(self.device)
             start_points = start_points.to(self.device)
             start_angles = start_angles.to(self.device)
 
@@ -109,6 +110,7 @@ class Trainer:
                 for n in range(len(baselines)):
                     bl = baselines[n]
                     bl_n = normalize_baselines(bl, box_size)
+                    bl_n = bl_n.to(self.device)
 
                     spoint = start_points[n]
                     sangle = start_angles[n]
@@ -124,14 +126,15 @@ class Trainer:
                         y_list = torch.cat([y_list, torch.tensor([y_list[-1]]*diff)], dim=0)
                     elif len(x_list) > len(bl_n):
                         diff = len(x_list) - len(bl_n)
-                        bl_n = torch.cat([x_list, torch.tensor([bl_n[-1]]*diff)], dim=0)
+                        bl_n = torch.cat([x_list, torch.stack([bl_n[-1]]*diff)], dim=0)
 
                     # Now combine the tensors in these lists to a single tensor and and permute the indices
                     # such that the two tensors match.
-                    l_target = torch.cat([l.unsqueeze(0) for l in bl_n], dim=0)
+                    l_target = torch.cat([l.unsqueeze(0) for l in bl_n], dim=0).float()
                     l_input = torch.cat([x_list.unsqueeze(0), y_list.unsqueeze(0)], dim=0).permute(1,0)
 
                     loss = self.criterion(l_input, l_target)
+                    loss.requires_grad = True
 
                     # backward + optimize
                     loss.backward()
@@ -152,7 +155,7 @@ class Trainer:
 
     def train(self):
         since = time.time()
-        writer = torch.utils.tensorboard.SummaryWriter(logdir=os.path.join(self.log_dir, self.exp_name))
+        writer = SummaryWriter(log_dir=os.path.join(self.log_dir, self.exp_name))
 
         best_model_wts = copy.deepcopy(self.model.state_dict())
         best_acc = 0.0

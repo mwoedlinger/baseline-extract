@@ -20,7 +20,7 @@ class LineRider(nn.Module):
             ('maxPool', nn.MaxPool2d(kernel_size=3, stride=2)),
             ('conv3', nn.Conv2d(in_channels=10, out_channels=15, kernel_size=4, stride=1)),
             ('conv4', nn.Conv2d(in_channels=15, out_channels=2, kernel_size=1, stride=1))
-            #TODO: ^^ to 3 output channels for: baseline end, baseline length (only relevant if baseline end) and angle
+            #TODO: ^ to 3 output channels for: baseline end, baseline length (only relevant if baseline end) and angle
         ]))
 
 
@@ -55,7 +55,7 @@ class LineRider(nn.Module):
 
         baseline_end = 0
 
-        while(baseline_end < 0.5):
+        for _ in range(int(img_w/box_size)+5):
             alpha = -angle
 
             # grid_sample expects grid coordinates scaled to [-1,1]. This means that (-1,-1) is the top left corner and
@@ -83,7 +83,7 @@ class LineRider(nn.Module):
             img_patch = torch.nn.functional.grid_sample(img, agrid, mode='nearest', padding_mode='zeros',
                                                         align_corners=None)
 
-            out = self.rider(img_patch)
+            out = self.rider(img_patch)[0, :, 0, 0]
 
             baseline_end = out[0]
             angle = out[1]
@@ -93,6 +93,9 @@ class LineRider(nn.Module):
 
             x_list.append(x)
             y_list.append(y)
+
+            if baseline_end < 0.5:
+                break
 
         return torch.tensor(x_list), torch.tensor(y_list)
 
