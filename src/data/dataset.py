@@ -1,9 +1,9 @@
 import os
-from torch.utils.data import Dataset
-from PIL import Image
 import numpy as np
-from torchvision import transforms
 from PIL import Image
+import torch
+from torch.utils.data import Dataset
+from torchvision import transforms
 from .xml_parser import XMLParser
 
 
@@ -39,7 +39,8 @@ class BaselineDataset(Dataset):
             p0 = bl[0].get_as_list()
             p1 = bl[1].get_as_list()
 
-            angle = np.arctan((p0[1]-p1[1])/(p0[0]-p1[0])) #TODO: make sure that the angle doesn't flip for vertical baselines
+            angle = np.arctan((p0[1]-p1[1])/(p0[0]-p1[0]))
+            #TODO: ^^ make sure that the angle doesn't flip for vertical baselines
 
             start_points.append(p0)
             start_angles.append(angle)
@@ -47,9 +48,9 @@ class BaselineDataset(Dataset):
         baselines = [[p.get_as_list() for p in bl] for bl in baselines]
 
         sample = {'image': self.transforms(image),
-                  'baselines': baselines,
-                  'start_points': start_points,
-                  'start_angles': start_angles}
+                  'baselines': torch.tensor(baselines),
+                  'start_points': torch.tensor(start_points),
+                  'start_angles': torch.tensor(start_angles)}
 
         return sample
 

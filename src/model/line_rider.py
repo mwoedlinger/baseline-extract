@@ -24,11 +24,14 @@ class LineRider(nn.Module):
         ]))
 
 
-
     def forward(self, img, x_0, y_0, angle, box_size):
+
         angle = angle
         x = x_0
         y = y_0
+
+        x_list = [x]
+        y_list = [y]
 
         img_w = img.size(1)
         img_h = img.size(2)
@@ -85,8 +88,13 @@ class LineRider(nn.Module):
             baseline_end = out[0]
             angle = out[1]
 
-            x = box_size*torch.sin(angle)
-            y = box_size*torch.cos(angle)
+            x = x + box_size*torch.cos(angle)
+            y = y + box_size*torch.sin(angle)
+
+            x_list.append(x)
+            y_list.append(y)
+
+        return torch.tensor(x_list), torch.tensor(y_list)
 
 
 

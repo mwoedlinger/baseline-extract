@@ -1,11 +1,11 @@
-import numpy as np
+import torch
 
 
 def d2(x1, y1, x2, y2):
     """
     Computes the euclidian distance between the two points (x1, y1) and (x2, y2).
     """
-    return np.sqrt(pow(x1 - x2, 2) + pow(y1 - y2, 2))
+    return torch.sqrt(pow(x1 - x2, 2) + pow(y1 - y2, 2))
 
 
 def normalize_baselines(bl: list, segment_length: float):
@@ -35,7 +35,7 @@ def normalize_baselines(bl: list, segment_length: float):
                 x = (1 - dist_ratio) * x + dist_ratio * x_n
                 y = (1 - dist_ratio) * y + dist_ratio * y_n
 
-                new_bl.append([x, y])
+                new_bl.append(torch.tensor([x, y]))
                 idx = i
                 break
             else:

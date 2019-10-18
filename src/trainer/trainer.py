@@ -4,13 +4,14 @@ import copy
 import tqdm
 import torch
 from ..data.dataset import BaselineDataset
+from ..utils.normalize_baselines import normalize_baselines
 
 class Trainer:
     """
     Performs the training of the LineRider network.
     """
 
-    def __init__(self, model, config, weights=None):
+    def __init__(self, config, weights=None):
         self.exp_name = config['exp_name']
         self.log_dir = config['log_dir']
         self.output_folder = config['output_folder']
@@ -25,12 +26,12 @@ class Trainer:
 
         self.device = torch.device('cuda:' + self.cfg_gpu if torch.cuda.is_available() else 'cpu')
 
-        self.model, self.criterion = self.get_model(model, weights)
+        self.model, self.criterion = self.get_model(weights)
 
         self.optimizer, self.scheduler = self.get_optimizer()
         self.dataloaders = self.get_dataloaders()
 
-    def get_model(self, model, weights):
+    def get_model(self, weights):
         """
         Load the correct model,
         :return: a list containing the model and the loss function (CrossEntropyLoss)
@@ -87,7 +88,7 @@ class Trainer:
         # Iterate over data.
         for batch in tqdm(self.dataloaders['train']):
 
-            image = batch['image'][0]
+            image = batch['image']
             baselines = batch['baselines'][0]
             start_points = batch['start_points'][0]
             start_angles = batch['start_angles'][0]
@@ -97,8 +98,7 @@ class Trainer:
             start_points = start_points.to(self.device)
             start_angles = start_angles.to(self.device)
 
-            #TODO: compute box_size
-            #TODO: Normalize baselines, Need scale for that
+            box_size = 30 #TODO: compute box_size
 
             steps += image.size(0)
 
@@ -108,26 +108,46 @@ class Trainer:
             with torch.set_grad_enabled(True):
                 for n in range(len(baselines)):
                     bl = baselines[n]
+                    bl_n = normalize_baselines(bl, box_size)
+
                     spoint = start_points[n]
                     sangle = start_angles[n]
-                    outputs = self.model(img=image, x_0=spoint[0], y_0=spoint[1], angle=sangle, box_size=box_size)
 
-                    loss = self.criterion(outputs, bl)
+                    x_list, y_list = self.model(img=image, x_0=spoint[0], y_0=spoint[1], angle=sangle,
+                                                box_size=box_size)
+
+                    # Match the length. In case the network didn't find the ending properly we add the last predicted
+                    # point repeatedly to match the dimension of bl_n
+                    if len(x_list) < len(bl_n):
+                        diff = len(bl_n) - len(x_list)
+                        x_list = torch.cat([x_list, torch.tensor([x_list[-1]]*diff)], dim=0)
+                        y_list = torch.cat([y_list, torch.tensor([y_list[-1]]*diff)], dim=0)
+                    elif len(x_list) > len(bl_n):
+                        diff = len(x_list) - len(bl_n)
+                        bl_n = torch.cat([x_list, torch.tensor([bl_n[-1]]*diff)], dim=0)
+
+                    # Now combine the tensors in these lists to a single tensor and and permute the indices
+                    # such that the two tensors match.
+                    l_target = torch.cat([l.unsqueeze(0) for l in bl_n], dim=0)
+                    l_input = torch.cat([x_list.unsqueeze(0), y_list.unsqueeze(0)], dim=0).permute(1,0)
+
+                    loss = self.criterion(l_input, l_target)
 
                     # backward + optimize
                     loss.backward()
                     self.optimizer.step()
 
                     #TODO: compute accuracy
+                    acc = 0.0
                     #TODO: test if it is better to compute the loss for the whole document instead of single baselines.
 
-        return loss, acc
+        return loss, acc, steps
 
     def _eval(self, writer):
         self.mode.eval()
         raise NotImplementedError
 
-        return loss, acc
+        #return loss, acc
 
 
     def train(self):
@@ -142,7 +162,7 @@ class Trainer:
             print('Epoch {}/{}'.format(epoch+1, self.epochs))
             print('-' * 10)
 
-            loss, acc = self._train_epoch(epoch, steps, writer)
+            loss, acc, steps = self._train_epoch(epoch, steps, writer)
             print('{} loss: {:.4f} acc: {:.4f}'.format('Train', loss, acc))
 
             if epoch % self.eval_epoch == 0:
