@@ -58,16 +58,17 @@ class XMLParser:
         if self.scaled:
             return
         elif max(self.width, self.height) > max_side:
-            ratio = max_side / max(self.width, self.height)
+            ratio_w = float(max_side) / self.width
+            ratio_h = float(max_side) / self.height
             w = self.width
             h = self.height
 
-            self.width = max_side if w > h else round(w * ratio)
-            self.height = max_side if h > w else round(h * ratio)
+            self.width = round(w * ratio_w)
+            self.height = round(h * ratio_h)
 
             for bl in self.baselines:
                 for point in bl:
-                    point.scale(ratio)
+                    point.scale(ratio_w, ratio_h)
 
             self.scaled = True
 

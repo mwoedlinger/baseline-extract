@@ -21,6 +21,7 @@ class Trainer:
         self.epochs = config['epochs']
         self.eval_epoch = config['eval_epoch']
         self.parameters = config['data']
+        self.max_side = config['data']['max_side']
 
         self.device = torch.device('cuda:' + self.cfg_gpu if torch.cuda.is_available() else 'cpu')
 
@@ -64,6 +65,7 @@ class Trainer:
         :return: The dataloaders
         """
 
+
         shuffle = {'train': True, 'eval': False}
         batch_size_dict = {'train': self.batch_size, 'eval': 1}
 
@@ -95,7 +97,7 @@ class Trainer:
             start_points = start_points.to(self.device)
             start_angles = start_angles.to(self.device)
 
-            #TODO: compute scale
+            #TODO: compute box_size
             #TODO: Normalize baselines, Need scale for that
 
             steps += image.size(0)
@@ -108,7 +110,7 @@ class Trainer:
                     bl = baselines[n]
                     spoint = start_points[n]
                     sangle = start_angles[n]
-                    outputs = self.model(img=image, x_0=spoint[0], y_0=spoint[1], angle=sangle, scale=scale)
+                    outputs = self.model(img=image, x_0=spoint[0], y_0=spoint[1], angle=sangle, box_size=box_size)
 
                     loss = self.criterion(outputs, bl)
 

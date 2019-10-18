@@ -5,12 +5,12 @@ class Point:
     def __init__(self, x: int = 0, y: int = 0):
         self.c = [x, y]
 
-    def scale(self, scale_factor: float):
+    def scale(self, scale_factor_x: float, scale_factor_y: float):
         """
         Scales both coordinates with the given scale_factor
         """
-        self.c[0] *= scale_factor
-        self.c[1] *= scale_factor
+        self.c[0] *= scale_factor_x
+        self.c[1] *= scale_factor_y
 
     def set_from_string(self, coords: str, sep: str = ','):
         """

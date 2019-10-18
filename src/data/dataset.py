@@ -2,6 +2,8 @@ import os
 from torch.utils.data import Dataset
 from PIL import Image
 import numpy as np
+from torchvision import transforms
+from PIL import Image
 from .xml_parser import XMLParser
 
 
@@ -14,6 +16,12 @@ class BaselineDataset(Dataset):
         self.inf_type = inf_type
         self.images, self.labels = self.list_files()
         self.max_side = parameters['max_side']
+        self.transforms = transforms.Compose([transforms.Resize((self.max_side, self.max_side),
+                                                                interpolation=Image.NEAREST),
+                                              transforms.ToTensor(),
+                                              transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                                   std=[0.229, 0.224, 0.225])
+                                              ])
 
     def __len__(self) -> int:
         return len(self.images)
@@ -27,16 +35,21 @@ class BaselineDataset(Dataset):
         start_points = []
         start_angles = []
 
-        for bl in label:
+        for bl in baselines:
             p0 = bl[0].get_as_list()
             p1 = bl[1].get_as_list()
 
-            angle = np.arctan((p0[1]-p1[1])/(p0[0]-p0[0]))
+            angle = np.arctan((p0[1]-p1[1])/(p0[0]-p1[0])) #TODO: make sure that the angle doesn't flip for vertical baselines
 
             start_points.append(p0)
             start_angles.append(angle)
 
-        sample = {'image': image, 'baselines': baselines, 'start_points': start_points, 'start_angles': start_angles}
+        baselines = [[p.get_as_list() for p in bl] for bl in baselines]
+
+        sample = {'image': self.transforms(image),
+                  'baselines': baselines,
+                  'start_points': start_points,
+                  'start_angles': start_angles}
 
         return sample
 
