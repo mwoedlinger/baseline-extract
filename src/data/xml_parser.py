@@ -35,7 +35,9 @@ class XMLParser:
             if 'TextRegion' in region.tag:
                 for child in region:
                     if 'TextLine' in child.tag:
-                        baseline_string = child.getchildren()[1].attrib['points']
+                        # One file (cPAS-2508.xml) contains a baseline without a 'Baseline' field.
+                        if len(child.getchildren()) > 1:
+                            baseline_string = child.getchildren()[1].attrib['points']
                         baseline_points_string = baseline_string.split()
 
                         points = []
