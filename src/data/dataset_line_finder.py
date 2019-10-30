@@ -6,18 +6,13 @@ from torchvision import transforms
 from .xml_parser import XMLParser
 
 
-class BaselineDataset(Dataset):
-    """
-    A dataset that generates data for a pytorch model.
-    """
+class DatasetLineFinder(Dataset):
     def __init__(self, inf_type: str, parameters: dict):
         self.input_folder = os.path.join(parameters['input_folder'], inf_type)
         self.inf_type = inf_type
         self.images, self.labels = self.list_files()
         self.max_side = parameters['max_side']
-        self.transforms = transforms.Compose([transforms.Resize((self.max_side, self.max_side),
-                                                                interpolation=Image.NEAREST),
-                                              transforms.ToTensor(),
+        self.transforms = transforms.Compose([transforms.ToTensor(),
                                               transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                                    std=[0.229, 0.224, 0.225])
                                               ])
@@ -54,8 +49,8 @@ class BaselineDataset(Dataset):
 
     def list_files(self) -> tuple:
         """
-        Get list of all image files in the folders 'images' and 'labels'
-        :return:
+        Get lists of all image and xml files in the folders 'images' and 'labels'
+        :return: A tuple of lists: (image_list, xml_list)
         """
         xml_dir = os.path.join(self.input_folder, 'page')
 

@@ -6,7 +6,8 @@
   "lr": 4e-4,
   "batch_size": 1,
   "epochs": 50,
-  "eval_epoch": 70,
+  "eval_epoch": 60,
+  "reset_idx_start": 1,
   "data": {
     "input_folder": "data/cBAD-ICDAR2019",
     "max_side": 1000

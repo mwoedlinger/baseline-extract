@@ -3,6 +3,7 @@ import math
 import torchvision
 import torch
 import torch.nn as nn
+import random
 
 
 class LineRider(nn.Module):
@@ -15,52 +16,88 @@ class LineRider(nn.Module):
           box_size = size of the window that gets extracted (receptive field)
     """
 
-    def __init__(self, device: str, input_size: int = 32, reset_idx: int = 4):
+    def __init__(self, device: str, input_size: int = 32):
         super(LineRider, self).__init__()
         self.device = device
         self.input_size = input_size
-        self.reset_idx = reset_idx
 
-        self.model = nn.Sequential(OrderedDict([
-            ('conv1', nn.Conv2d(in_channels=3, out_channels=5, kernel_size=5, stride=2)),
-            ('relu1', nn.ReLU()),
-            ('conv2', nn.Conv2d(in_channels=5, out_channels=10, kernel_size=5, stride=1)),
-            ('relu2', nn.ReLU()),
-            ('maxPool', nn.MaxPool2d(kernel_size=3, stride=2)),
-            ('conv3', nn.Conv2d(in_channels=10, out_channels=15, kernel_size=4, stride=1)),
-            ('relu3', nn.ReLU()),
-            # ('conv4', nn.Conv2d(in_channels=15, out_channels=2, kernel_size=1, stride=1)),
-            ('flatten', nn.Flatten()),
-            ('fc', nn.Linear(in_features=15, out_features=2))
-            #TODO: ^ to 3 output channels for: baseline end, baseline length (only relevant if baseline end) and angle
-        ]))
+        # in: [N, 3, 32, 32] -> out: [N, 3]
+        self.model_eyes = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Flatten(),
+            nn.Linear(in_features=64, out_features=3)
+        )
 
-        # # mnasnet is a light image classifier trained on imageNet
-        # self.model = torchvision.models.mnasnet1_0(pretrained=True)
-        #
-        # for m in self.model.modules():
-        #     if isinstance(m, nn.BatchNorm2d):
-        #         m.eval()
-        #
-        # self.model.classifier = nn.Sequential(
-        #     nn.Dropout(0.2),
-        #     nn.Linear(in_features=1280, out_features=3))
+        # in: [N, 3, 32, 32] -> out: [N, 8]
+        self.model_brain = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=4),
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=4),
+            nn.Flatten(),
+            nn.Linear(in_features=32, out_features=8)
+            # nn.Linear(in_features=32, out_features=2),
+            # nn.Softmax(dim=1)
+        )
 
-    def rider(self, x):
-        out = self.model(x)
+        self.brain_hidden = nn.Linear(in_features=16, out_features=8)
+        self.brain_output = nn.Linear(in_features=16, out_features=2)
+        self.brain_activation = nn.Softmax(dim=1)
 
-        # cosa = nn.Tanh()(out[:, 0])
-        # sina = nn.Tanh()(out[:, 1])
-        # bl_end = out[:, 2]
-        #
-        # return torch.cat([cosa, sina, bl_end], dim=0)
+    def rider_eyes(self, x):
+        """
+        The model has 3 outputs:
+            1:  The angle of the next baseline segment
+            2:  The probability that the end of the baseline is reached i.e. that the next baseline segment
+                is the last.
+            3:  The length of the next baseline segment. Only relevant if it is the last segment.
+        :param x:
+        :return:
+        """
+        out = self.model_eyes(x)
 
-        angle = nn.Tanh()(out[:, 0])*math.pi/2
-        bl_end = nn.ReLU()(out[:, 1])
+        sina = nn.Tanh()(out[:, 0])
+        cosa = nn.Tanh()(out[:, 1])
 
-        return torch.cat([angle, bl_end], dim=0)
+        return torch.cat([sina, cosa], dim=0)
 
-    def compute_start_and_angle(self, baseline, idx):
+    def rider_brain(self, x, hidden):
+        """
+        A RNN that determines when the end of the baseline is reached.
+        :param x:
+        :param hidden:
+        :return:
+        """
+        cnn_out = self.model_brain(x)
+
+        combined = torch.cat((cnn_out, hidden), dim=1)
+        hidden = self.brain_hidden(combined)
+        output = self.brain_output(combined)
+        output = self.brain_activation(output)
+
+        return output, hidden
+
+    def compute_start_and_angle(self, baseline, idx, data_augmentation=False):
+        """
+        For a given baseline returns the point at index=idx and the angle the baseline segment [idx, idx+1] has
+        towards a horizontal line.
+        :param baseline: The baseline as a torch.tensor
+        :param idx: The index
+        :param data_augmentation: if set to True perturbs the point and angle randomly by small values
+        :return: a tupel of x coordinate of the point, y coordinate and the angle
+        """
         if torch.abs(baseline[idx, 0] - baseline[idx + 1, 0]) < 0.001:
             angle = torch.tensor(math.pi / 2.0).to(self.device)
         else:
@@ -70,32 +107,50 @@ class LineRider(nn.Module):
         x = baseline[idx, 0]
         y = baseline[idx, 1]
 
+        # Perturb position and angle, otherwise the network will learn to always predict angle = 0
+        if data_augmentation:
+            x += random.randint(-2, 2)
+            y += random.randint(-2, 2)
+            angle += random.uniform(-0.3, 0.3)
+
         return x, y, angle
 
-    def forward(self, img, box_size, baseline=None):
+    def forward(self, img, box_size, x_0=None, y_0=None, angle_0=None, baseline=None, reset_idx: int = 4):
         """
         If a baseline is provided the model assumes training mode which means every fourth baseline point it will
         reset to the label given in 'baseline'. This also means that the computation graph is detached from
         previous computations every fourth baseline point.
-        :param img:
-        :param box_size:
-        :param baseline:
+        :param img:         The image as a torch tensor
+        :param box_size:    The window size in the original image
+        :param baseline:    The baseline as torch tensor
+        :param reset_idx:   The index where the coordinates are reset to the true labels given in 'baseline'
+                            For example if reset_idx = 4 every fourth window is reset to the true coordinates.
         :return:    a torch tensor with shape [n, 2] where n is the number of baseline points. [0,2] is the start point
                     of the baseline. [k, 0] is the x and [k, 1] is the y coordinate of point k.
         """
 
-        x, y, angle = self.compute_start_and_angle(baseline, 0)
+        x = x_0
+        y = y_0
+        angle = angle_0
+        hidden = torch.tensor([0]*8).float().unsqueeze(0).to(self.device)
+
+        # If baseline is provided extract start point and start angle from baseline
+        if baseline is not None:
+            x, y, angle = self.compute_start_and_angle(baseline, 0)
+
+        sina = torch.sin(angle)
+        cosa = torch.cos(angle)
 
         x_list = x.clone().unsqueeze(0)
         y_list = y.clone().unsqueeze(0)
+        bl_end_list = torch.tensor(0.0).unsqueeze(0).to(self.device)
 
         img_w = img.size(2)
         img_h = img.size(3)
-
         w_box_ratio = box_size / img_w
         h_box_ratio = box_size / img_h
 
-        # The size of the windows:
+        # The otput size of the grid i.e. the size of the tensor that is fed into the network:
         size = (1, 3, self.input_size, self.input_size)
 
         # grid_sample expects grid coordinates scaled to [-1,1]. This means that (-1,-1) is the top left corner and
@@ -108,11 +163,11 @@ class LineRider(nn.Module):
         scale_x = w_box_ratio
         scale_y = h_box_ratio
 
-        baseline_end = 0
-        idx = 1  # idx number 0 is the start point
+        idx = 0  # idx number 0 is the start point
 
         for _ in range(int(img_w / box_size) + 5):
-            alpha = -angle
+            idx += 1
+            alpha = angle
 
             # grid_sample expects grid coordinates scaled to [-1,1]. This means that (-1,-1) is the top left corner and
             # (1,1) is the bottom right corner.
@@ -138,52 +193,51 @@ class LineRider(nn.Module):
             agrid = torch.nn.functional.affine_grid(theta, size).to(self.device)
             img_patch = torch.nn.functional.grid_sample(img, agrid, mode='nearest', padding_mode='zeros')
 
-            out = self.rider(img_patch)
 
-            angle = angle + out[0]
-            bl_end = out[1]
+            ############################################
+            out = self.rider_eyes(img_patch)
+            end_out, hidden = self.rider_brain(img_patch, hidden=hidden)
 
-            # if out[2] < 1 the network predicted the end of the baseline.
-            # The value of out[2] is then the quotient of the
-            if False:#bl_end < 1:
-                x = x + box_size * torch.cos(angle) * bl_end
-                y = y + box_size * torch.sin(angle) * bl_end
+            bl_end = end_out[0, 0]
+            bl_end_length = end_out[0, 1]
+
+
+            # if bl_end < 0.5 the network predicted the end of the baseline.
+            # The value of bl_end_length is then the quotient of box_size and the length of the final baseline segment.
+            if bl_end > 0.5:
+                # cos(a + b) = cos(a)*cos(b) - sin(a)*sin(b)
+                x = x + box_size * (cosa * out[0] - sina * out[1]) * bl_end_length
+                # sin(a + b) = sin(a)*cos(b) + cos(a)*sin(b)
+                y = y - box_size * (sina * out[0] + cosa * out[1]) * bl_end_length
 
                 x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
                 y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
+                bl_end_list = torch.cat([bl_end_list, bl_end.unsqueeze(0)], dim=0)
 
                 break
             else:
-                x = x + box_size * torch.cos(angle)
-                y = y + box_size * torch.sin(angle)
+                # cos(a + b) = cos(a)*cos(b) - sin(a)*sin(b)
+                x = x + box_size * (cosa * out[0] - sina * out[1])
+                # sin(a + b) = sin(a)*cos(b) + cos(a)*sin(b)
+                y = y - box_size * (sina * out[0] + cosa * out[1])
 
                 x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
                 y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
+                bl_end_list = torch.cat([bl_end_list, bl_end.unsqueeze(0)], dim=0)
 
-            # # cos(a + b) = cos(a)*cos(b) - sin(a)*sin(b)
-            # x = x + box_size * (cosa*out[0] - sina*out[1])
-            # # sin(a + b) = sin(a)*cos(b) + cos(a)*sin(b)
-            # y = y + box_size * (sina*out[0] + cosa*out[1])
-            #
-            # sina = out[1]
-            # cosa = out[0]
-            #
-            # angle = angle + torch.atan(cosa/sina)
-            # # If this ^ version is used add these two lines to the beginning of the program:
-            # # sina = torch.sin(angle)
-            # # cosa = torch.cos(angle)
+            sina = out[1]
+            cosa = out[0]
 
+            angle = torch.atan(sina/cosa)
 
-            if idx % self.reset_idx == self.reset_idx-1:
-                if len(baseline) > (idx+1):
-                    x, y, angle = self.compute_start_and_angle(baseline, idx)
+            # Every "reset_idx" step reset point and angle to the true label.
+            if idx % reset_idx == reset_idx-1:
+                if len(baseline) > idx+1:
+                    x, y, angle = self.compute_start_and_angle(baseline, idx, data_augmentation=True)
                 else:
-                    break
-
-            idx += 1
-            # TODO: delete
-            if len(baseline) < (idx + 1):
-                break
+                    pass
+                    #break
 
 
-        return torch.cat([x_list.unsqueeze(0), y_list.unsqueeze(0)], dim=0).permute(1, 0)
+
+        return torch.cat([x_list.unsqueeze(0), y_list.unsqueeze(0)], dim=0).permute(1, 0), bl_end_list
