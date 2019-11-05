@@ -1,9 +1,12 @@
 import os
+import numpy as np
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 from .xml_parser import XMLParser
+from ..utils.distances import d2
+from ..utils.normalize_baselines import compute_start_and_angle
 
 
 class DatasetLineFinder(Dataset):
@@ -12,7 +15,9 @@ class DatasetLineFinder(Dataset):
         self.inf_type = inf_type
         self.images, self.labels = self.list_files()
         self.max_side = parameters['max_side']
-        self.transforms = transforms.Compose([transforms.ToTensor(),
+        self.transforms = transforms.Compose([transforms.Resize((self.max_side, self.max_side),#Keep resize?
+                                                                interpolation=Image.NEAREST),
+                                              transforms.ToTensor(),
                                               transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                                    std=[0.229, 0.224, 0.225])
                                               ])
@@ -23,6 +28,19 @@ class DatasetLineFinder(Dataset):
     def __len__(self) -> int:
         return len(self.images)
 
+    def get_median_diff(self, start_points):
+        diff = []
+        N = len(start_points)
+
+        for n in range(0, N-1):
+            x1 = start_points[n][0]
+            y1 = start_points[n][1]
+            x2 = start_points[n+1][0]
+            y2 = start_points[n+1][1]
+            diff.append(d2(x1, y1, x2, y2))
+
+        return np.median(diff)
+
     def __getitem__(self, idx: int):
         image = Image.open(self.images[idx])
         parser = XMLParser(self.labels[idx])
@@ -30,20 +48,16 @@ class DatasetLineFinder(Dataset):
         baselines = parser.get_baselines()
 
         baselines = [[p.get_as_list() for p in bl] for bl in baselines]
-        # bl_length is a list that contains the length of every baseline. This will be returned to make it
-        # easier to remove the padding.
-        bl_lengths = [len(bl) for bl in baselines]
-
-        # We assume a maximum baseline length of self.max_bl_length and a maximum number of baselines of self.max_bl_no.
-        # Everything below that will be padded such that the baselines returned will be saved in a
-        # (self.max_bl_no, self.max_bl_length, 2) tensor and bl_length will be stored in (self.max_bl_no) tensors.
-        bl_lengths_padded = bl_lengths + [-1]*(self.max_bl_no - len(bl_lengths))
-        baselines_padded_linewise = [b + [[-1,-1]]*(self.max_bl_length-len(b)) for b in baselines]
-        baselines_padded = baselines_padded_linewise + [[[-1, -1]]*self.max_bl_length]*(self.max_bl_no - len(baselines_padded_linewise))
+        start_points_and_angles = [compute_start_and_angle(baseline=torch.tensor(bl),
+                                                           idx=0,
+                                                           data_augmentation=False)
+                                   for bl in baselines]
+        start_points = torch.tensor([bl[0] for bl in baselines])
+        box_size = self.get_median_diff(start_points)
+        labels = torch.tensor([sa + (torch.tensor(box_size), ) for sa in start_points_and_angles])
 
         sample = {'image': self.transforms(image),
-                  'baselines': torch.tensor(baselines_padded),
-                  'bl_lengths': torch.tensor(bl_lengths_padded)}
+                  'labels': labels}
 
         return sample
 

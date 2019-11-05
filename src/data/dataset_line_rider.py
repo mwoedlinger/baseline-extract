@@ -31,7 +31,7 @@ class DatasetLineRider(Dataset):
 
     def __getitem__(self, idx: int):
         # TODO: implement data augmentation: horizontal flip:
-        # Flip the entire input image horizontally. Also 'flip' the coordinates the baselines => inverse the order
+        # Flip the entire input image horizontally. Also 'flip' the coordinates of the baselines => inverse the order
         # (baselines should be read from left to right)
         image = Image.open(self.images[idx])
         parser = XMLParser(self.labels[idx])
@@ -69,6 +69,6 @@ class DatasetLineRider(Dataset):
         basename_list = [os.path.basename(f).split('.')[0] for f in xml_list]
         image_list = [os.path.join(self.input_folder, f+'.jpg') for f in basename_list]
 
-        return image_list, xml_list
+        return image_list[0:100], xml_list[0:100]
 
 

@@ -1,12 +1,7 @@
 import torch
-
-
-def d2(x1, y1, x2, y2):
-    """
-    Computes the euclidian distance between the two points (x1, y1) and (x2, y2).
-    """
-    return torch.sqrt(pow(x1 - x2, 2) + pow(y1 - y2, 2))
-
+import math
+import random
+from .distances import d2
 
 def normalize_baselines(bl: list, segment_length: float, device: str):
     """
@@ -52,3 +47,42 @@ def normalize_baselines(bl: list, segment_length: float, device: str):
 
     return torch.cat([l.unsqueeze(0) for l in new_bl], dim=0)
     # return new_bl
+
+def compute_start_and_angle(baseline, idx, data_augmentation=False):
+    """
+    For a given baseline returns the point at index=idx and the angle the baseline segment [idx, idx+1] has
+    towards a horizontal line.
+    NOTE: The angle gets a negative sign compared to the mathematical positive direction because
+    the positive y direction is downwards.
+    :param baseline: The baseline as a torch.tensor
+    :param idx: The index
+    :param data_augmentation: if set to True perturbs the point and angle randomly by small values
+    :return: a tuple of x coordinate of the point, y coordinate and the angle
+    """
+    if torch.abs(baseline[idx, 0] - baseline[idx + 1, 0]) < 0.001:
+        if baseline[idx, 1] > baseline[idx + 1, 1]:
+            angle = torch.tensor(math.pi / 2.0)
+        else:
+            angle = torch.tensor(-math.pi / 2.0)
+    else:
+        if baseline[idx, 0] < baseline[idx + 1, 0]:
+            angle = torch.atan((baseline[idx + 1, 1] - baseline[idx, 1]) / (baseline[idx, 0] - baseline[idx + 1, 0]))
+        else:
+            if baseline[idx, 1] > baseline[idx + 1, 1]:
+                angle = torch.atan(
+                    (baseline[idx, 0] - baseline[idx + 1, 0]) / (baseline[idx, 1] - baseline[idx + 1, 0])) + math.pi/2
+            else:
+                angle = torch.atan(
+                    (baseline[idx, 0] - baseline[idx + 1, 0]) / (baseline[idx + 1, 1] - baseline[idx, 0])) - math.pi/2
+    # ^ positive x direction is towards right and positive y direction is downwards.
+
+    x = baseline[idx, 0]
+    y = baseline[idx, 1]
+
+    # Perturb position and angle, otherwise the network will learn to always predict angle = 0
+    if data_augmentation:
+        x += random.randint(-2, 2)
+        y += random.randint(-2, 2)
+        angle += random.uniform(-0.3, 0.3)
+
+    return x, y, angle

@@ -28,6 +28,7 @@ class LineFinder(nn.Module):
         # 1: y
         # 2: angle
         # 3: box_size
+        # 4: confidence
         self.model = nn.Sequential(
             layer0,
             layer1,
@@ -35,6 +36,8 @@ class LineFinder(nn.Module):
             layer3,
             layer4,#TODO: check if layer 4 should be used. layer 4 reduces the resolution to 32x32 patches
             nn.Conv2d(in_channels=256, out_channels=4, kernel_size=1))
+
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         patch_size = 32.0
@@ -50,6 +53,7 @@ class LineFinder(nn.Module):
             for column in range(offset_tensor.shape[2]):
                 offset_tensor[0, row, column] = patch_size / 2.0 + row * patch_size
                 offset_tensor[1, row, column] = patch_size / 2.0 + column * patch_size
+                out[:, 4, row, column] = self.sigmoid(out[:, 4, row, column])
 
         affine_out = out + offset_tensor
         affine_out = nn.Flatten()(affine_out)
