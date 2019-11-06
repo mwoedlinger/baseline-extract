@@ -3,7 +3,7 @@ import math
 import random
 from .distances import d2
 
-def normalize_baselines(bl: list, segment_length: float, device: str):
+def normalize_baselines(bl: list, segment_length: float):
     """
     Takes a baseline as input and returns a baseline that consists of normalized line segments.
     That means that the baseline consists of a list of points where each point is exactly 'segment_length' away

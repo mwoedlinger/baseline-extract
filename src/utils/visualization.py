@@ -5,7 +5,15 @@ import cv2
 from .normalize_baselines import normalize_baselines
 
 
-def draw_baselines(image: torch.tensor, baselines: torch.tensor, bl_lengths: torch.tensor, idx=-1):
+def draw_baselines(image: torch.tensor, baselines: torch.tensor, idx=-1):
+    """
+    Creates a visualization of the model output. It draws points every baseline point and connects them with lines.
+    Returns the resulting image as a torch tensor.
+    :param image: The input image, assumes that is is normalized with imageNet parameters.
+    :param baselines: The predicted baselines as a torch tensor
+    :param idx: (optional) if set to a specific index, colors this baseline in a different color
+    :return: The resulting image
+    """
     h = image.shape[1]
     w = image.shape[2]
 
@@ -17,9 +25,6 @@ def draw_baselines(image: torch.tensor, baselines: torch.tensor, bl_lengths: tor
 
     img_cv2 = np.zeros((h, w, 3), dtype=np.float32)
 
-    # number_of_baselines = min([idx for idx in range(0, len(bl_lengths)) if bl_lengths[idx] == -1])
-    # baselines_n = [normalize_baselines(b[:bl_lengths[n]], box_size, device=device)
-    #                for n, b in enumerate(baselines[0:number_of_baselines])]
     baselines_n = baselines
 
     for N, bl in enumerate(baselines_n):
@@ -43,6 +48,39 @@ def draw_baselines(image: torch.tensor, baselines: torch.tensor, bl_lengths: tor
     img_cv2 = img_cv2.astype(np.float64)
     comb = cv2.addWeighted(img_cv2, 0.7, img_cv1, 0.3, 0)
     # comb = cv2.cvtColor(comb, cv2.COLOR_BGR2RGB)
+    comb = torchvision.transforms.ToTensor()(comb).float()
+
+    return comb
+
+def draw_start_points(image: torch.tensor, label: torch.tensor):
+    """
+    Creates a visualization of the model output. For every start point of every baseline it draws a circle with radius
+    box_size and a line with the length 2*box_size and the predicted angle
+    :param image: The input image, assumes that is is normalized with imageNet parameters.
+    :param label: The predicted labels
+    :return: The resulting image
+    """
+    img = image.numpy().transpose(1, 2, 0)
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+    img = std * img + mean
+    img = np.clip(img, 0, 1)
+
+    sp = label[:, 0:2]
+    angles = label[:, 2]
+    box_size = label[:, 3]
+
+    labels_img = np.zeros(img.shape)
+
+    for k, s in enumerate(sp):
+        x = int(s[0].item())
+        y = int(s[1].item())
+        cv2.circle(labels_img, (x, y), box_size[0], (1.0, 0, 0), 4)
+        cv2.line(labels_img, (x, y),
+                 (x + 2 * box_size[0] * np.cos(angles[k]), y - 2 * box_size[0] * np.sin(angles[k])),
+                 (0, 1.0, 0), 4)
+
+    comb = cv2.addWeighted(img, 0.5, labels_img, 0.5, 0)
     comb = torchvision.transforms.ToTensor()(comb).float()
 
     return comb

@@ -5,8 +5,9 @@ import torch.nn as nn
 
 class LineFinder(nn.Module):
 
-    def __init__(self):
+    def __init__(self, device: str):
         super(LineFinder, self).__init__()
+        self.device = device
 
         resnet = torchvision.models.resnet18(pretrained=True)
 
@@ -23,7 +24,7 @@ class LineFinder(nn.Module):
         layer3 = resnet.layer3
         layer4 = resnet.layer4
 
-        # out_channels = 4:
+        # out_channels = 5:
         # 0: x
         # 1: y
         # 2: angle
@@ -35,31 +36,33 @@ class LineFinder(nn.Module):
             layer2,
             layer3,
             layer4,#TODO: check if layer 4 should be used. layer 4 reduces the resolution to 32x32 patches
-            nn.Conv2d(in_channels=256, out_channels=4, kernel_size=1))
+            nn.Conv2d(in_channels=512, out_channels=5, kernel_size=1))
 
         self.sigmoid = nn.Sigmoid()
+        self.flatten_space = nn.Flatten(start_dim=2, end_dim=3)
 
     def forward(self, x):
         patch_size = 32.0
 
-        out = self.mode(x)
+        out = self.model(x)
         h = out.shape[2]
         w = out.shape[3]
+        batch_size = out.shape[0]
 
         # Moves the coordinates from the small boxes to global coordinates
         # Not sure if needed. TODO: check if it makes a difference
-        offset_tensor = torch.zeros(4, h, w)
-        for row in range(offset_tensor.shape[1]):
-            for column in range(offset_tensor.shape[2]):
-                offset_tensor[0, row, column] = patch_size / 2.0 + row * patch_size
-                offset_tensor[1, row, column] = patch_size / 2.0 + column * patch_size
-                out[:, 4, row, column] = self.sigmoid(out[:, 4, row, column])
+        offset_tensor = torch.zeros(batch_size, 5, h, w)
+        for b in range(batch_size):
+            for row in range(h):
+                for column in range(w):
+                    offset_tensor[b, 0, row, column] = patch_size / 2.0 + row * patch_size
+                    offset_tensor[b, 1, row, column] = patch_size / 2.0 + column * patch_size
+                    out[b, 4, row, column] = self.sigmoid(out[b, 4, row, column])
+
+        offset_tensor = offset_tensor.to(self.device)
 
         affine_out = out + offset_tensor
-        affine_out = nn.Flatten()(affine_out)
+        affine_out = self.flatten_space(affine_out)
+        affine_out = affine_out.permute(0, 2, 1)
 
         return affine_out
-
-
-    # use https://docs.scipy.org/doc/scipy-0.18.1/reference/generated/scipy.optimize.linear_sum_assignment.html to
-    # match for loss

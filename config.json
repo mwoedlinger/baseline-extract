@@ -5,11 +5,11 @@
   "gpu": 3,
   "lr": 4e-4,
   "batch_size": 1,
-  "epochs": 50,
-  "eval_epoch": 60,
+  "epochs": 30,
+  "eval_epoch": 10,
   "reset_idx_start": 1,
   "data": {
     "input_folder": "data/cBAD-ICDAR2019",
-    "max_side": 1000
+    "max_side": 1024
   }
 }

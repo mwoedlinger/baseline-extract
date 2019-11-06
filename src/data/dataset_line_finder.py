@@ -57,7 +57,7 @@ class DatasetLineFinder(Dataset):
         labels = torch.tensor([sa + (torch.tensor(box_size), ) for sa in start_points_and_angles])
 
         sample = {'image': self.transforms(image),
-                  'labels': labels}
+                  'label': labels}
 
         return sample
 

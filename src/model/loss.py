@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from scipy.optimize import linear_sum_assignment
+import time
 from ..utils.distances import point_line_distance
 
 
@@ -43,36 +44,83 @@ class LineFinderLoss(nn.Module):
         self.mse = nn.MSELoss()
         self.alpha = alpha
 
-    def forward(self, input, target):
-        N = input.shape[1]
-        M = target.shape[1]
-
-        cost = torch.zeros(N, M)
-
-        for n in range(N):
-            for m in range(M):
-                cost[n, m] = self.mse(input[n, 0:2], target[m, 0:2])
-
-        inp_idx, target_idx = linear_sum_assignment(cost)
-
-        X = torch.zeros(N, M)
-        for p_idx in inp_idx:
-            for l_idx in target_idx:
-                X[p_idx, l_idx] = 1
-
-        # Loss = Sum_{n=0}^N Sum_{m=0}^M    X_nm [alpha*MSE(l_n, p_m) - Log(c_m)] - (1- X_nm) Log(1-c_m)
-        # where:
-        #   N:      prediction dimension
-        #   M:      label dimension
-        #   X_mn:   linear assignement matrix
-        #   l_n:    label coordinates
-        #   p_m:    prediction coordinates
-        #   c_m:    confidence scores
+    def forward(self, pred, label):
+        batch_size = pred.shape[0]
+        n_tot = pred.shape[1]
+        m_tot = label.shape[1]
 
         loss = 0
-        for n in range(N):
-            for m in range(M):
-                loss += X[n, m]*(self.alpha*self.mse(input, target) - torch.log(input[n, 4]))\
-                        - (1-X[n, m])*(torch.log(1-input[n, 4]))
-        loss += nn.MSELoss()(input[:, 3], target)
+
+        for b in range(batch_size):
+
+            inp = pred[b, :, 0:4]
+            targ = label[b, :, :]
+
+            conf_scores = pred[b, :, 4]
+
+            log_c = torch.log(conf_scores + 0.00001)
+            log_c_anti = torch(1 - conf_scores + 0.00001)
+
+            log_c_exp = log_c[:, None].expand(-1, targ.shape[0])
+            log_c_anti_exp = log_c_anti[:, None].expand(-1, targ.shape[0])
+            inp_exp = inp[:, None, :].expand(-1, targ.shape[0], -1)
+            targ_exp = targ[None, :, :].expand(inp.shape[0], -1, -1)
+
+            diff = (inp_exp - targ_exp)
+            normed_diff = torch.norm(diff, 2, 3) ** 2
+
+            # Loss = Sum_{n=0}^N Sum_{m=0}^M    X_nm [alpha*MSE(l_n, p_m) - Log(c_m)] - (1- X_nm) Log(1-c_m)
+            # where:
+            #   N:      prediction dimension
+            #   M:      label dimension
+            #   X_mn:   linear assignement matrix
+            #   l_n:    label coordinates
+            #   p_m:    prediction coordinates
+            #   c_m:    confidence scores
+
+            C = self.alpha*normed_diff - log_c_exp + log_c_anti_exp
+
+            X = torch.zeros(C.shape)
+
+            inp_idx, targ_idx = linear_sum_assignment(C)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            # cost = torch.zeros(n_tot, m_tot)
+            #
+            # for n in range(n_tot):
+            #     for m in range(m_tot):
+            #         cost[n, m] = self.mse(pred[b, n, 0:2], label[b, m, 0:2])
+            #
+            # cost = cost.to('cuda:3')
+            # inp_idx, target_idx = linear_sum_assignment(cost.detach())
+            #
+            # X = torch.zeros(n_tot, m_tot)
+            #
+            # for p_idx in inp_idx:
+            #     for l_idx in target_idx:
+            #         X[p_idx, l_idx] = 1
+            #
+            #
+            # for m in range(m_tot):
+            #     loss += self.alpha * cost[inp_idx[m], target_idx[m]] - torch.log(pred[b, inp_idx[m], 4]) \
+            #             - torch.log(1 - pred[b, inp_idx[m], 4])#substract and add in next step
+            #
+            # for n in range(n_tot):
+            #     loss += torch.log(1 - pred[b, n, 4])
+            #
+            # loss += self.alpha * nn.MSELoss()(pred[b, inp_idx, 3], label[b, target_idx, 3])
+
+        return loss
 

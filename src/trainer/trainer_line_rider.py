@@ -2,6 +2,7 @@ import os
 import time
 import copy
 from tqdm import tqdm
+import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from ..data.dataset_line_rider import DatasetLineRider
@@ -9,9 +10,23 @@ from ..utils.normalize_baselines import normalize_baselines, compute_start_and_a
 from ..utils.visualization import draw_baselines
 from ..model.line_rider import LineRider
 from ..model.loss import L12Loss
+from ..utils.distances import d2
 
 
-class Trainer:
+def get_median_diff(start_points):
+    diff = []
+    N = len(start_points)
+
+    for n in range(0, N - 1):
+        x1 = start_points[n][0]
+        y1 = start_points[n][1]
+        x2 = start_points[n + 1][0]
+        y2 = start_points[n + 1][1]
+        diff.append(d2(x1, y1, x2, y2))
+
+    return np.median(diff)
+
+class TrainerLineRider:
     """
     Performs the training of the LineRider network.
     """
@@ -53,6 +68,7 @@ class Trainer:
         # criterion_bl = torch.nn.L1Loss()
         criterion_end = torch.nn.BCELoss()
         criterion_bl = L12Loss()
+        self.criterion_length = torch.nn.MSELoss()
 
         return [model_ft, criterion_bl, criterion_end]
 
@@ -92,6 +108,13 @@ class Trainer:
         return dataloaders
 
     def _train_epoch(self, steps, epoch, writer):
+        """
+        Train the model for one epoch. returns a a tuple containing the loss and the current step counter.
+        :param steps: starting point for step counter. The function returns the updated steps.
+        :param epoch: the current epoch number
+        :param writer: Tensorboard writer
+        :return: A tuple containing the loss and the current step counter.
+        """
         # TODO: o) Compute box_size
         #       o) Implement data augmentation: vary the baseline a little bit
         #       o) Test if it is better to compute the loss for the whole document instead of single baselines.
@@ -100,7 +123,7 @@ class Trainer:
         if epoch % 4 == 0 and epoch > 0:
             self.reset_idx += 1
 
-        tensorboard_img_steps = 99
+        tensorboard_img_steps = 499
 
         running_loss = 0
         running_counter = 0
@@ -108,7 +131,7 @@ class Trainer:
         # Iterate over data.
         for batch in tqdm(self.dataloaders['train']):
 
-            image = batch['image']
+            image = batch['image'].to(self.device)
             baselines = batch['baselines'][0]
             bl_lengths = batch['bl_lengths'][0]
 
@@ -117,9 +140,9 @@ class Trainer:
             # is the real (not counting the padding) length of baseline idx.
             number_of_baselines = min([idx for idx in range(0, len(bl_lengths)) if bl_lengths[idx] == -1])
 
-            image = image.to(self.device)
-
-            box_size = 64
+            start_points = torch.tensor([[bl[0, 0], bl[0, 1]] for bl in baselines[0:number_of_baselines]])
+            box_size = get_median_diff(start_points)
+            box_size = min(64, box_size)
 
             steps += image.size(0)
 
@@ -134,11 +157,12 @@ class Trainer:
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]
-                    bl_n = normalize_baselines(bl, box_size, device=self.device)
+                    bl_n = normalize_baselines(bl, box_size)
                     bl_n = bl_n.to(self.device)
+                    bl_n_end_length = d2(bl_n[-1, 0], bl_n[-1, 1], bl_n[-2, 0], bl_n[-2,1])/box_size
 
-                    c_list, bl_end_list = self.model(img=image, box_size=box_size, baseline=bl_n,
-                                                     reset_idx=self.reset_idx)
+                    c_list, bl_end_list, bl_end_length_list = self.model(img=image, box_size=box_size, baseline=bl_n,
+                                                                         reset_idx=self.reset_idx)
 
                     # Every tensorboard_img_steps steps save the result to tensorboard:
                     if steps % tensorboard_img_steps == tensorboard_img_steps-1:
@@ -156,27 +180,27 @@ class Trainer:
                     l_label = bl_n[:-1]
                     l_pred = c_list[:-1]
                     l_bl_end_label = torch.tensor([0]*(len(bl_n)-1)+[1]).float().to(self.device).unsqueeze(0)
-                    # l_bl_end_label = torch.tensor([len(bl_n)-1]).to(self.device)
                     if len(bl_n) > len(bl_end_list):
                         l_bl_end_pred = torch.cat([bl_end_list,
                                                    torch.tensor([0]*(len(bl_n)-len(bl_end_list))).float().to(self.device)], dim=0)
                     else:
                         l_bl_end_pred = bl_end_list
                     l_bl_end_pred = l_bl_end_pred.unsqueeze(0)
+                    l_bl_end_length_label = bl_n_end_length
+                    l_bl_end_length_pred = bl_end_length_list[-1]
 
                     # The loss is a combination of the regression loss for the baseline prediction and the
                     # classification for the prediction of the baseline end.
-                    loss = self.criterion_bl(l_pred, l_label)*(2+self.criterion_end(l_bl_end_pred, l_bl_end_label))
+                    loss = self.criterion_bl(l_pred, l_label) \
+                           + 10*self.criterion_end(l_bl_end_pred, l_bl_end_label) \
+                           + 10*self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
+
 
                     running_loss += loss
                     running_counter += 1
 
                     # backward + optimize
                     loss.backward()
-                    # print('## in:  ' + str(l_label))
-                    # print('## out: ' + str(l_pred))
-                    # print('## diff: ' + str(l_pred - l_label))
-                    # print('## bl_end: ' + str(bl_end_list))
                     self.optimizer.step()
 
                     # Write to tensorboard
@@ -185,7 +209,7 @@ class Trainer:
 
             # Every tensorboard_img_steps steps save the result to tensorboard:
             if steps % tensorboard_img_steps == tensorboard_img_steps-1:
-                dbimg = draw_baselines(image=image[0], baselines=pred_list, bl_lengths=bl_lengths)
+                dbimg = draw_baselines(image=image[0], baselines=pred_list)
                 writer.add_image(tag='train/pred', img_tensor=dbimg, global_step=steps)
 
         loss = running_loss/running_counter
@@ -218,15 +242,16 @@ class Trainer:
             for n in range(number_of_baselines):
                 # Normalise the baselines such that each line segment has the length 'box_size'
                 bl = baselines[n][:bl_lengths[n]]
-                bl_n = normalize_baselines(bl, box_size, device=self.device)
-                bl_n = bl_n
+                bl_n = normalize_baselines(bl, box_size)
+                bl_n = bl_n.to(self.device)
+                bl_n_end_length = d2(bl_n[-1, 0], bl_n[-1, 1], bl_n[-2, 0], bl_n[-2,1])/box_size
 
                 x_0, y_0, angle = compute_start_and_angle(baseline=bl_n, idx=0)
                 x_0 = x_0.to(self.device)
                 y_0 = y_0.to(self.device)
                 angle = angle.to(self.device)
 
-                c_list, bl_end_list = self.model(img=image, box_size=box_size, x_0=x_0, y_0=y_0,
+                c_list, bl_end_list, bl_end_length_list = self.model(img=image, box_size=box_size, x_0=x_0, y_0=y_0,
                                                  angle_0=angle, reset_idx=1000)
 
                 # Match the length. In case the network didn't find the ending properly we add the last predicted
@@ -238,12 +263,21 @@ class Trainer:
                     diff = len(c_list) - len(bl_n)
                     bl_n = torch.cat([bl_n, torch.stack([bl_n[-1]] * diff)], dim=0)
 
-                l_label = bl_n
-                l_pred = c_list
-                l_bl_end_label = torch.tensor([0] * (len(l_pred) - 1) + [1]).float().to(self.device)
-                l_bl_end_pred = bl_end_list
+                l_label = bl_n[:-1]
+                l_pred = c_list[:-1]
+                l_bl_end_label = torch.tensor([0]*(len(bl_n)-1)+[1]).float().to(self.device).unsqueeze(0)
+                if len(bl_n) > len(bl_end_list):
+                    l_bl_end_pred = torch.cat([bl_end_list,
+                                               torch.tensor([0]*(len(bl_n)-len(bl_end_list))).float().to(self.device)], dim=0)
+                else:
+                    l_bl_end_pred = bl_end_list
+                l_bl_end_pred = l_bl_end_pred.unsqueeze(0)
+                l_bl_end_length_label = bl_n_end_length
+                l_bl_end_length_pred = bl_end_length_list[-1]
 
-                loss = self.criterion_bl(l_pred, l_label)  # + self.criterion_end(l_bl_end_pred, l_bl_end_label)
+                loss = 0.01 * self.criterion_bl(l_pred, l_label) \
+                       + 10 * self.criterion_end(l_bl_end_pred, l_bl_end_label) \
+                       + 10 * self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
 
                 running_loss += loss
                 running_counter += 1
