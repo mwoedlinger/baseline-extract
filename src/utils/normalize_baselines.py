@@ -48,7 +48,7 @@ def normalize_baselines(bl: list, segment_length: float):
     return torch.cat([l.unsqueeze(0) for l in new_bl], dim=0)
     # return new_bl
 
-def compute_start_and_angle(baseline, idx, data_augmentation=False):
+def compute_start_and_angle(baseline, idx, data_augmentation=False, box_size=None):
     """
     For a given baseline returns the point at index=idx and the angle the baseline segment [idx, idx+1] has
     towards a horizontal line.
@@ -68,12 +68,18 @@ def compute_start_and_angle(baseline, idx, data_augmentation=False):
         if baseline[idx, 0] < baseline[idx + 1, 0]:
             angle = torch.atan((baseline[idx + 1, 1] - baseline[idx, 1]) / (baseline[idx, 0] - baseline[idx + 1, 0]))
         else:
-            if baseline[idx, 1] > baseline[idx + 1, 1]:
-                angle = torch.atan(
-                    (baseline[idx, 0] - baseline[idx + 1, 0]) / (baseline[idx, 1] - baseline[idx + 1, 0])) + math.pi/2
+            if torch.abs(baseline[idx, 1] - baseline[idx + 1, 1]) < 0.001:
+                if baseline[idx, 1] > baseline[idx + 1, 1]:
+                    angle = torch.tensor(math.pi / 2)
+                else:
+                    angle = torch.tensor(-math.pi / 2)
             else:
-                angle = torch.atan(
-                    (baseline[idx, 0] - baseline[idx + 1, 0]) / (baseline[idx + 1, 1] - baseline[idx, 0])) - math.pi/2
+                if baseline[idx, 1] > baseline[idx + 1, 1]:
+                    angle = torch.atan(
+                        (baseline[idx, 0] - baseline[idx + 1, 0]) / (baseline[idx, 1] - baseline[idx + 1, 1])) + math.pi/2
+                else:
+                    angle = torch.atan(
+                        (baseline[idx, 0] - baseline[idx + 1, 0]) / (baseline[idx, 1] - baseline[idx + 1, 1])) - math.pi/2
     # ^ positive x direction is towards right and positive y direction is downwards.
 
     x = baseline[idx, 0]
@@ -81,8 +87,12 @@ def compute_start_and_angle(baseline, idx, data_augmentation=False):
 
     # Perturb position and angle, otherwise the network will learn to always predict angle = 0
     if data_augmentation:
-        x += random.randint(-2, 2)
-        y += random.randint(-2, 2)
+        if box_size is not None:
+            x += random.randint(-box_size/4, box_size/4)
+            y += random.randint(-box_size/4, box_size/4)
+        else:
+            x += random.randint(-2, 2)
+            y += random.randint(-2, 2)
         angle += random.uniform(-0.3, 0.3)
 
     return x, y, angle

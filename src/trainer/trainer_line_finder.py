@@ -22,7 +22,7 @@ class TrainerLineFinder:
 
         self.lr = config['lr']
         self.gpu = config['gpu']
-        self.batch_size = 1#config['batch_size']
+        self.batch_size = config['batch_size']
         self.epochs = config['epochs']
         self.eval_epoch = config['eval_epoch']
         self.parameters = config['data']
@@ -60,7 +60,7 @@ class TrainerLineFinder:
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
         # Decay LR by a factor of 'gamma' every 'step_size' epochs
-        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=0.5)
+        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.8)
 
         return [optimizer, exp_lr_scheduler]
 
@@ -71,7 +71,7 @@ class TrainerLineFinder:
         :return: The dataloaders
         """
 
-        shuffle = {'train': False, 'eval': False}#TODO: change to True for train
+        shuffle = {'train': True, 'eval': False}
         batch_size_dict = {'train': self.batch_size, 'eval': 1}
 
         image_datasets = {inf_type: DatasetLineFinder(inf_type=inf_type,
@@ -95,7 +95,7 @@ class TrainerLineFinder:
         """
         self.model.train()
 
-        tensorboard_img_steps = 99
+        tensorboard_img_steps = 500
 
         running_loss = 0
         running_counter = 0
@@ -111,15 +111,8 @@ class TrainerLineFinder:
             with torch.set_grad_enabled(True):
                 self.optimizer.zero_grad()
 
-                t1 = time.time()
                 out = self.model(image)
-                t2 = time.time()
-                print('model: dt = ' + str(t2-t1))
-
-                t1 = time.time()
                 loss = self.criterion(out, label)
-                t2 = time.time()
-                print('loss:  dt = ' + str(t2-t1))
 
                 running_loss += loss
                 running_counter += 1
@@ -132,12 +125,10 @@ class TrainerLineFinder:
                 writer.add_scalar(tag='mse/train', scalar_value=loss,
                                   global_step=steps)
 
-
             # Every tensorboard_img_steps steps save the result to tensorboard:
             if steps % tensorboard_img_steps == tensorboard_img_steps-1:
-                combined = draw_start_points(image=image, label=label)
+                combined = draw_start_points(image=image[0].cpu(), label=out[0].detach())
                 writer.add_image(tag='train/pred', img_tensor=combined, global_step=steps)
-
         loss = running_loss/running_counter
 
         return loss, steps
@@ -145,29 +136,30 @@ class TrainerLineFinder:
     def _eval(self, writer, eval_steps):
         self.model.eval()
 
-        tensorboard_img_steps = 99
+        tensorboard_img_steps = 500
 
         running_loss = 0
         running_counter = 0
 
         # Iterate over data.
-        for batch in tqdm(self.dataloaders['train']):
+        with torch.no_grad():
+            for batch in tqdm(self.dataloaders['train']):
 
-            image = batch['image'].to(self.device)
-            label = batch['label'].to(self.device)
+                image = batch['image'].to(self.device)
+                label = batch['label'].to(self.device)
 
-            eval_steps += image.size(0)
+                eval_steps += image.size(0)
 
-            out = self.model(image)
-            loss = self.criterion(out, label)
+                out = self.model(image)
+                loss = self.criterion(out, label)
 
-            running_loss += loss
-            running_counter += 1
+                running_loss += loss
+                running_counter += 1
 
-            # Every tensorboard_img_steps steps save the result to tensorboard:
-            if eval_steps % tensorboard_img_steps == tensorboard_img_steps - 1:
-                combined = draw_start_points(image=image, label=label)
-                writer.add_image(tag='eval/pred', img_tensor=combined, global_step=steps)
+                # Every tensorboard_img_steps steps save the result to tensorboard:
+                if eval_steps % tensorboard_img_steps == tensorboard_img_steps - 1:
+                    combined = draw_start_points(image=image[0].cpu(), label=out[0].detach())
+                    writer.add_image(tag='eval/pred', img_tensor=combined, global_step=eval_steps)
 
         loss = running_loss / running_counter
 

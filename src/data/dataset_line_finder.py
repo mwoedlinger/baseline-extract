@@ -32,14 +32,17 @@ class DatasetLineFinder(Dataset):
         diff = []
         N = len(start_points)
 
-        for n in range(0, N-1):
-            x1 = start_points[n][0]
-            y1 = start_points[n][1]
-            x2 = start_points[n+1][0]
-            y2 = start_points[n+1][1]
-            diff.append(d2(x1, y1, x2, y2))
+        if N > 0:
+            for n in range(0, N-1):
+                x1 = start_points[n][0]
+                y1 = start_points[n][1]
+                x2 = start_points[n+1][0]
+                y2 = start_points[n+1][1]
+                diff.append(d2(x1, y1, x2, y2))
 
-        return np.median(diff)
+            return np.median(diff)
+        else:
+            return -1
 
     def __getitem__(self, idx: int):
         image = Image.open(self.images[idx])
@@ -53,7 +56,7 @@ class DatasetLineFinder(Dataset):
                                                            data_augmentation=False)
                                    for bl in baselines]
         start_points = torch.tensor([bl[0] for bl in baselines])
-        box_size = self.get_median_diff(start_points)
+        box_size = max(32, min(64, self.get_median_diff(start_points)))
         labels = torch.tensor([sa + (torch.tensor(box_size), ) for sa in start_points_and_angles])
 
         sample = {'image': self.transforms(image),

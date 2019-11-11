@@ -1,12 +1,12 @@
 {
-  "exp_name": "default",
+  "exp_name": "line_rider_default",
   "log_dir": "tensorboard",
   "output_folder": "trained_models",
-  "gpu": 3,
+  "gpu": 2,
   "lr": 4e-4,
   "batch_size": 1,
-  "epochs": 30,
-  "eval_epoch": 10,
+  "epochs": 50,
+  "eval_epoch": 5,
   "reset_idx_start": 1,
   "data": {
     "input_folder": "data/cBAD-ICDAR2019",

@@ -66,19 +66,25 @@ def draw_start_points(image: torch.tensor, label: torch.tensor):
     img = std * img + mean
     img = np.clip(img, 0, 1)
 
-    sp = label[:, 0:2]
-    angles = label[:, 2]
-    box_size = label[:, 3]
+    sp = label[:, 0:2].cpu()
+    angles = label[:, 2].cpu()
+    box_size = label[:, 3].cpu()
+    confidences = label[:, 4].cpu()
 
     labels_img = np.zeros(img.shape)
 
     for k, s in enumerate(sp):
-        x = int(s[0].item())
-        y = int(s[1].item())
-        cv2.circle(labels_img, (x, y), box_size[0], (1.0, 0, 0), 4)
-        cv2.line(labels_img, (x, y),
-                 (x + 2 * box_size[0] * np.cos(angles[k]), y - 2 * box_size[0] * np.sin(angles[k])),
-                 (0, 1.0, 0), 4)
+        if confidences[k].item() < 0.5:
+            continue
+        else:
+            if box_size[k] <= 0:
+                box_size[k] = -np.abs(box_size[k])-0.0001
+            x = int(s[0].item())
+            y = int(s[1].item())
+            cv2.circle(labels_img, (x, y), box_size[0], (1.0, 0, 0), 4)
+            cv2.line(labels_img, (x, y),
+                     (x + 2 * box_size[0] * np.cos(angles[k]), y - 2 * box_size[0] * np.sin(angles[k])),
+                     (0, 1.0, 0), 4)
 
     comb = cv2.addWeighted(img, 0.5, labels_img, 0.5, 0)
     comb = torchvision.transforms.ToTensor()(comb).float()

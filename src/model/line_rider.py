@@ -44,7 +44,6 @@ class LineRider(nn.Module):
         self.lin_out = nn.Linear(in_features=16, out_features=4)
         self.lin_hidden = nn.Linear(in_features=16, out_features=8)
 
-
     def rider_eyes(self, x, hidden):
         """
         A RNN for baseline extraction.
@@ -68,9 +67,7 @@ class LineRider(nn.Module):
         bl_end = nn.Sigmoid()(out[:, 2])
         bl_end_length = nn.Sigmoid()(out[:, 3])
 
-
         return torch.cat([sina, cosa, bl_end, bl_end_length], dim=0), hidden
-
 
     def forward(self, img, box_size, x_0=None, y_0=None, angle_0=None, baseline=None, reset_idx: int = 4):
         """
@@ -96,7 +93,7 @@ class LineRider(nn.Module):
 
         # If baseline is provided extract start point and start angle from baseline
         if baseline is not None:
-            x, y, angle = compute_start_and_angle(baseline, 0)
+            x, y, angle = compute_start_and_angle(baseline, 0, data_augmentation=True)
             x = x.to(self.device)
             y = y.to(self.device)
             angle = angle.to(self.device)
@@ -146,7 +143,7 @@ class LineRider(nn.Module):
             #   + (cos(angle) * w_box, -sin(angle) * w_box) + (0, -h_box/4
             # // This assumes that the image is squared, otherwise the hypotenuse is not exactly w_box/2
             x_s = -1.0 + x_scaled + w_box / 2 * torch.cos(alpha)
-            y_s = -1.0 + y_scaled - w_box / 2 * torch.sin(alpha) - h_box/4
+            y_s = -1.0 + y_scaled - w_box / 2 * torch.sin(alpha) - h_box/4 #TODO: leave or comment out?
 
             # Theta describes an affine transformation and has the form
             # ( A_11, A_12, x_s)
@@ -163,7 +160,7 @@ class LineRider(nn.Module):
 
             out, hidden = self.rider_eyes(img_patch, hidden=hidden)
 
-            norm = out[0]**2 + out[1]**2
+            norm = torch.sqrt(out[0]**2 + out[1]**2)
             sina_new = out[0]/norm
             cosa_new = out[1]/norm
 
@@ -177,7 +174,8 @@ class LineRider(nn.Module):
             # cos(a + b) = cos(a)*cos(b) - sin(a)*sin(b)
             # sin(a + b) = sin(a)*cos(b) + cos(a)*sin(b)
             if train:
-                if (reset_idx < 6 and len(baseline) <= (idx + 1)) or (reset_idx >= 6 and bl_end > 0.5):
+                # if (reset_idx < 6 and len(baseline) <= (idx + 1)) or (reset_idx >= 6 and bl_end > 0.5):
+                if len(baseline) == (idx + 1):
                     x = baseline[-1, 0]
                     y = baseline[-1, 1]
 
@@ -186,29 +184,29 @@ class LineRider(nn.Module):
 
                     break
                 else:
-                    x = x + box_size * (cosa * sina_new - sina * cosa_new)
-                    y = y - box_size * (sina * sina_new + cosa * cosa_new)
+                    x = x + box_size * (cosa * cosa_new - sina * sina_new)
+                    y = y - box_size * (sina * cosa_new + cosa * sina_new)
 
                     x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
                     y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
             else:
                 if bl_end > 0.5:
-                    x = x + box_size * (cosa * sina_new - sina * cosa_new) * bl_end_length
-                    y = y - box_size * (sina * sina_new + cosa * cosa_new) * bl_end_length
+                    x = x + box_size * (cosa * cosa_new - sina * sina_new)
+                    y = y - box_size * (sina * cosa_new + cosa * sina_new)
 
                     x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
                     y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
 
                     break
                 else:
-                    x = x + box_size * (cosa * sina_new - sina * cosa_new)
-                    y = y - box_size * (sina * sina_new + cosa * cosa_new)
+                    x = x + box_size * (cosa * cosa_new - sina * sina_new)
+                    y = y - box_size * (sina * cosa_new + cosa * sina_new)
 
                     x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
                     y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
 
-            sina = cosa_new
-            cosa = sina_new
+            sina = sina_new
+            cosa = cosa_new
             angle += torch.atan(sina/cosa)
 
             # Every "reset_idx" step reset point and angle to the true label.
@@ -222,7 +220,7 @@ class LineRider(nn.Module):
                     sina = torch.sin(angle)
                     cosa = torch.cos(angle)
                 else:
+                    print('ERROR! This message should not be reached!')
                     break
-
 
         return torch.cat([x_list.unsqueeze(0), y_list.unsqueeze(0)], dim=0).permute(1, 0), bl_end_list, bl_end_length_list

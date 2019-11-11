@@ -33,6 +33,8 @@ class L12Loss(nn.Module):
 #
 #                 # WRONG: maybe a point lies directly on a line (continued beyond the end points) but
 #                 # the the point and the line are not matched in the way intended.
+#                 # Possible solution: add together the point line distance and the distances of the point and
+#                 # the line end points
 #                 cost[n, m] = point_line_distance(x_0, y_0, xp_1, yp_1, xp_2, yp_2)
 #
 #         inp_idx, target_idx = linear_sum_assignment(cost)
@@ -46,81 +48,73 @@ class LineFinderLoss(nn.Module):
 
     def forward(self, pred, label):
         batch_size = pred.shape[0]
-        n_tot = pred.shape[1]
-        m_tot = label.shape[1]
+
+        #TODO: find better solution
+        if pred.shape[1] < label.shape[1]:
+            label = label[:, 0:pred.shape[1], :]
 
         loss = 0
 
+
         for b in range(batch_size):
+            # If the page is empty punish the model if it finds anything at all:
+            if label.shape[1] == 0:
+                conf_scores = pred[b, :, 4]
+                log_c_anti = torch.log(1 - conf_scores + 0.00001)
+                loss += log_c_anti.sum()
+            else:
+                # I get P predictions and T true labels.
+                inp = pred[b, :, 0:4]
+                targ = label[b, :, :]
 
-            inp = pred[b, :, 0:4]
-            targ = label[b, :, :]
+                conf_scores = pred[b, :, 4]
 
-            conf_scores = pred[b, :, 4]
+                # Compute the confidence for all P predictions.
+                log_c = torch.log(conf_scores + 0.00001)
+                log_c_anti = torch.log(1 - conf_scores + 0.00001)
 
-            log_c = torch.log(conf_scores + 0.00001)
-            log_c_anti = torch(1 - conf_scores + 0.00001)
+                # Expand such that for all T true lables I have a row of all predicted confidence logs.
+                # The result is a P x T matrix.
+                log_c_exp = log_c[:, None].expand(-1, targ.shape[0])
+                log_c_anti_exp = log_c_anti[:, None].expand(-1, targ.shape[0])
 
-            log_c_exp = log_c[:, None].expand(-1, targ.shape[0])
-            log_c_anti_exp = log_c_anti[:, None].expand(-1, targ.shape[0])
-            inp_exp = inp[:, None, :].expand(-1, targ.shape[0], -1)
-            targ_exp = targ[None, :, :].expand(inp.shape[0], -1, -1)
+                # Expand such that I get P x T x 4 matrices.
+                inp_exp = inp[:, None, :].expand(-1, targ.shape[0], -1)
+                targ_exp = targ[None, :, :].expand(inp.shape[0], -1, -1)
 
-            diff = (inp_exp - targ_exp)
-            normed_diff = torch.norm(diff, 2, 3) ** 2
+                # Compute the difference between every pair of prediction and true label locations.
+                diff = (inp_exp[:, :, 0:4] - targ_exp[:, :, 0:4])
+                normed_diff = torch.norm(diff, 2, 2) ** 2
 
-            # Loss = Sum_{n=0}^N Sum_{m=0}^M    X_nm [alpha*MSE(l_n, p_m) - Log(c_m)] - (1- X_nm) Log(1-c_m)
-            # where:
-            #   N:      prediction dimension
-            #   M:      label dimension
-            #   X_mn:   linear assignement matrix
-            #   l_n:    label coordinates
-            #   p_m:    prediction coordinates
-            #   c_m:    confidence scores
+                # Loss = Sum_{n=0}^N Sum_{m=0}^M    X_nm [alpha*MSE(l_n, p_m) - Log(c_m)] - (1- X_nm) Log(1-c_m)
+                # where:
+                #   N:      prediction dimension
+                #   M:      label dimension
+                #   X_mn:   linear assignement matrix
+                #   l_n:    label coordinates
+                #   p_m:    prediction coordinates
+                #   c_m:    confidence scores
 
-            C = self.alpha*normed_diff - log_c_exp + log_c_anti_exp
+                # Compute the cost matrix. This is a P x T matrix.
+                C = self.alpha * normed_diff - log_c_exp + log_c_anti_exp
+                C = C.cpu().detach().numpy()
 
-            X = torch.zeros(C.shape)
+                X = torch.zeros(C.shape)
+                x_c = torch.ones(C.shape[0])
 
-            inp_idx, targ_idx = linear_sum_assignment(C)
+                # For every column index (true), compute the row index (pred) where the cost is minimal.
+                inp_idx, targ_idx = linear_sum_assignment(C)
 
+                X[(inp_idx, targ_idx)] = 1.0
+                x_c[inp_idx] = 0.0
 
+                X = X.to(inp.device)
+                x_c = x_c.to(inp.device)
 
+                location_loss = (self.alpha * normed_diff * X).sum()
+                confidence_loss = -(log_c_exp * X).sum() - (log_c_anti * x_c).sum()
 
-
-
-
-
-
-
-
-
-
-
-            # cost = torch.zeros(n_tot, m_tot)
-            #
-            # for n in range(n_tot):
-            #     for m in range(m_tot):
-            #         cost[n, m] = self.mse(pred[b, n, 0:2], label[b, m, 0:2])
-            #
-            # cost = cost.to('cuda:3')
-            # inp_idx, target_idx = linear_sum_assignment(cost.detach())
-            #
-            # X = torch.zeros(n_tot, m_tot)
-            #
-            # for p_idx in inp_idx:
-            #     for l_idx in target_idx:
-            #         X[p_idx, l_idx] = 1
-            #
-            #
-            # for m in range(m_tot):
-            #     loss += self.alpha * cost[inp_idx[m], target_idx[m]] - torch.log(pred[b, inp_idx[m], 4]) \
-            #             - torch.log(1 - pred[b, inp_idx[m], 4])#substract and add in next step
-            #
-            # for n in range(n_tot):
-            #     loss += torch.log(1 - pred[b, n, 4])
-            #
-            # loss += self.alpha * nn.MSELoss()(pred[b, inp_idx, 3], label[b, target_idx, 3])
+                loss = location_loss + confidence_loss
 
         return loss
 
