@@ -3,6 +3,7 @@ import torchvision
 import numpy as np
 import cv2
 from .normalize_baselines import normalize_baselines
+from .distances import get_median_diff
 
 
 def draw_baselines(image: torch.tensor, baselines: torch.tensor, idx=-1):
@@ -52,7 +53,7 @@ def draw_baselines(image: torch.tensor, baselines: torch.tensor, idx=-1):
 
     return comb
 
-def draw_start_points(image: torch.tensor, label: torch.tensor):
+def draw_start_points(image: torch.tensor, label: torch.tensor, true_label: torch.tensor=None):
     """
     Creates a visualization of the model output. For every start point of every baseline it draws a circle with radius
     box_size and a line with the length 2*box_size and the predicted angle
@@ -67,24 +68,39 @@ def draw_start_points(image: torch.tensor, label: torch.tensor):
     img = np.clip(img, 0, 1)
 
     sp = label[:, 0:2].cpu()
+    if true_label is not None:
+        if len(true_label) < 1:
+            true_label = None
+        else:
+            sp_true = true_label[:, 0:2].cpu()
     angles = label[:, 2].cpu()
-    box_size = label[:, 3].cpu()
-    confidences = label[:, 4].cpu()
+    box_size = get_median_diff(sp)
+    #box_size = label[:, 3].cpu()
+    confidences = label[:, -1].cpu()
 
     labels_img = np.zeros(img.shape)
+    thickness = 2
 
     for k, s in enumerate(sp):
-        if confidences[k].item() < 0.5:
+        if confidences[k].item() < 0.01:
             continue
         else:
-            if box_size[k] <= 0:
-                box_size[k] = -np.abs(box_size[k])-0.0001
+            ccolor = confidences[k].item()
+            if box_size <= 0:
+                box_size = -np.abs(box_size[k])-0.0001
             x = int(s[0].item())
             y = int(s[1].item())
-            cv2.circle(labels_img, (x, y), box_size[0], (1.0, 0, 0), 4)
+            cv2.circle(labels_img, (x, y), box_size, (ccolor, 0, 0), thickness)
             cv2.line(labels_img, (x, y),
-                     (x + 2 * box_size[0] * np.cos(angles[k]), y - 2 * box_size[0] * np.sin(angles[k])),
-                     (0, 1.0, 0), 4)
+                     (x + 2 * box_size * np.cos(angles[k]), y - 2 * box_size * np.sin(angles[k])),
+                     (0, ccolor, 0), thickness)
+
+    if true_label is not None:
+        for s in sp_true:
+            # Draw GT start points
+            x = int(s[0].item())
+            y = int(s[1].item())
+            cv2.circle(labels_img, (x, y), 5, (0, 0, 1.0), thickness)
 
     comb = cv2.addWeighted(img, 0.5, labels_img, 0.5, 0)
     comb = torchvision.transforms.ToTensor()(comb).float()

@@ -69,10 +69,7 @@ def compute_start_and_angle(baseline, idx, data_augmentation=False, box_size=Non
             angle = torch.atan((baseline[idx + 1, 1] - baseline[idx, 1]) / (baseline[idx, 0] - baseline[idx + 1, 0]))
         else:
             if torch.abs(baseline[idx, 1] - baseline[idx + 1, 1]) < 0.001:
-                if baseline[idx, 1] > baseline[idx + 1, 1]:
-                    angle = torch.tensor(math.pi / 2)
-                else:
-                    angle = torch.tensor(-math.pi / 2)
+                angle = torch.tensor(math.pi / 2)
             else:
                 if baseline[idx, 1] > baseline[idx + 1, 1]:
                     angle = torch.atan(
@@ -91,8 +88,8 @@ def compute_start_and_angle(baseline, idx, data_augmentation=False, box_size=Non
             x += random.randint(-box_size/4, box_size/4)
             y += random.randint(-box_size/4, box_size/4)
         else:
-            x += random.randint(-2, 2)
-            y += random.randint(-2, 2)
+            x += random.randint(-5, 5)
+            y += random.randint(-5, 5)
         angle += random.uniform(-0.3, 0.3)
 
     return x, y, angle

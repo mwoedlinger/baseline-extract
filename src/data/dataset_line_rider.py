@@ -27,8 +27,15 @@ def prepare_data_for_loss(bl_n, c_list, bl_end_list, bl_n_end_length, bl_end_len
     l_pred = c_list[:-1]
 
     l_bl_end_label = torch.tensor([normal(bl_n[k][0], bl_n[k][1], bl_n[-1][0], bl_n[-1][1], box_size)
-                                   for k in range(0, len(bl_n))]).to(device).unsqueeze(0)
-    l_bl_end_pred = bl_end_list.unsqueeze(0)
+                                   for k in range(0, len(bl_n))]).to(device)
+    l_bl_end_pred = bl_end_list
+
+    if len(l_bl_end_pred) < len(l_bl_end_label):
+        diff = len(l_bl_end_label) - len(l_bl_end_pred)
+        l_bl_end_pred = torch.cat([l_bl_end_pred, torch.stack([torch.tensor(0.0).to(device)] * diff)], dim=0)
+    elif len(l_bl_end_pred) > len(l_bl_end_label):
+        diff = len(l_bl_end_pred) - len(l_bl_end_label)
+        l_bl_end_label = torch.cat([l_bl_end_label, torch.stack([torch.tensor(1.0).to(device)] * diff)], dim=0)
 
     # l_bl_end_label = torch.tensor([0] * (len(bl_n) - 1) + [1]).float().to(device).unsqueeze(0)
     # if len(bl_n) > len(bl_end_list):

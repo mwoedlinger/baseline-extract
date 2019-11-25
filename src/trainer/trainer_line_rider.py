@@ -19,7 +19,7 @@ class TrainerLineRider:
     """
 
     def __init__(self, config, weights=None):
-        self.exp_name = config['exp_name']
+        self.exp_name = 'line_rider_' + config['exp_name']
         self.log_dir = config['log_dir']
         self.output_folder = config['output_folder']
 
@@ -107,12 +107,17 @@ class TrainerLineRider:
         #       o) Test if it is better to compute the loss for the whole document instead of single baselines.
         self.model.train()
 
-        if epoch % 1 == 0 and epoch > 0:
+        if self.reset_idx < 8:
             self.reset_idx += 1
+        # if epoch % 1 == 0 and epoch > 0:
+        #     self.reset_idx += 1
 
         tensorboard_img_steps = 499
 
         running_loss = 0
+        running_bl_loss = 0
+        running_end_loss = 0
+        running_length_loss = 0
         running_counter = 0
 
         # Iterate over data.
@@ -127,8 +132,8 @@ class TrainerLineRider:
             number_of_baselines = min([idx for idx in range(0, len(bl_lengths)) if bl_lengths[idx] == -1])
 
             start_points = torch.tensor([[bl[0, 0], bl[0, 1]] for bl in baselines[0:number_of_baselines]])
-            box_size = get_median_diff(start_points)
-            box_size = max(32, min(64, box_size))
+            box_size = get_median_diff(start_points)/2.0
+            box_size = min(10, max(32, box_size))
 
             steps += image.size(0)
 
@@ -143,16 +148,17 @@ class TrainerLineRider:
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]
-                    bl_n = normalize_baselines(bl, box_size)
+                    bl_n = normalize_baselines(bl, 2*box_size)
                     bl_n = bl_n.to(self.device)
-                    bl_n_end_length = d2(bl_n[-1, 0], bl_n[-1, 1], bl_n[-2, 0], bl_n[-2, 1])/box_size
+                    bl_n_end_length = d2(bl_n[-1, 0], bl_n[-1, 1], bl_n[-2, 0], bl_n[-2, 1])/(2*box_size)
 
-                    c_list, bl_end_list, bl_end_length_list = self.model(img=image, box_size=box_size, baseline=bl_n,
+                    c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, baseline=bl_n,
                                                                          reset_idx=self.reset_idx)
 
                     # Every tensorboard_img_steps steps save the result to tensorboard:
                     if steps % tensorboard_img_steps == tensorboard_img_steps-1:
                         pred_list.append(c_list)
+                        print(str(n) + ': ' + str(c_list))
 
                     l_label, l_pred, l_bl_end_label, l_bl_end_pred, l_bl_end_length_label, l_bl_end_length_pred = \
                         prepare_data_for_loss(bl_n, c_list, bl_end_list, bl_n_end_length,
@@ -166,24 +172,37 @@ class TrainerLineRider:
                            + 10*self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
 
                     running_loss += loss
+                    running_bl_loss += self.criterion_bl(l_pred, l_label)
+                    running_end_loss += 10 * self.criterion_end(l_bl_end_pred, l_bl_end_label)
+                    running_length_loss += 10 * self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
+
                     running_counter += 1
+
 
                     # backward + optimize
                     loss.backward()
                     self.optimizer.step()
-
 
             # Every tensorboard_img_steps steps save the result to tensorboard:
             if steps % tensorboard_img_steps == tensorboard_img_steps-1:
                 dbimg = draw_baselines(image=image[0], baselines=pred_list)
                 writer.add_image(tag='train/pred', img_tensor=dbimg, global_step=steps)
 
-            loss = running_loss/running_counter
+        loss = running_loss/running_counter
+        bl_loss = running_bl_loss/running_counter
+        end_loss = running_end_loss/running_counter
+        length_loss = running_end_loss/running_counter
+
+        # Write to tensorboard
+        writer.add_scalar(tag='mse/train', scalar_value=loss, global_step=steps)
+        writer.add_scalar(tag='bl_loss/train', scalar_value=bl_loss, global_step=steps)
+        writer.add_scalar(tag='end_loss/train', scalar_value=end_loss, global_step=steps)
+        writer.add_scalar(tag='length_loss/train', scalar_value=length_loss, global_step=steps)
 
 
         return loss, steps
 
-    def _eval(self):
+    def _eval(self, eval_steps, writer):
         """
         Validate the model on the validation set. Returns  the loss.
         :return: The loss on the validation set.
@@ -191,12 +210,16 @@ class TrainerLineRider:
         # TODO: compute box_size
         self.model.eval()
 
+        tensorboard_img_steps = 499
+
         running_loss = 0
+        running_bl_loss = 0
+        running_end_loss = 0
+        running_length_loss = 0
         running_counter = 0
 
         # Iterate over data.
         for batch in tqdm(self.dataloaders['eval']):
-
             image = batch['image']
             baselines = batch['baselines'][0]
             bl_lengths = batch['bl_lengths'][0]
@@ -207,27 +230,38 @@ class TrainerLineRider:
             number_of_baselines = min([idx for idx in range(0, len(bl_lengths)) if bl_lengths[idx] == -1])
 
             start_points = torch.tensor([[bl[0, 0], bl[0, 1]] for bl in baselines[0:number_of_baselines]])
-            box_size = get_median_diff(start_points)
-            box_size = min(64, box_size)
+            box_size = get_median_diff(start_points)/2.0
+            box_size = min(10, max(32, box_size))
 
             image = image.to(self.device)
+
+            eval_steps += image.size(0)
+
+            # Every tensorboard_img_steps steps save the result to tensorboard:
+            if eval_steps % tensorboard_img_steps == tensorboard_img_steps-1:
+                pred_list = []
 
             with torch.no_grad():
                 for n in range(number_of_baselines):
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]
-                    bl_n = normalize_baselines(bl, box_size)
+                    bl_n = normalize_baselines(bl, 2*box_size) #TODO: make it clearer that 2*box_size is used
                     bl_n = bl_n.to(self.device)
-                    bl_n_end_length = d2(bl_n[-1, 0], bl_n[-1, 1], bl_n[-2, 0], bl_n[-2, 1])/box_size
+                    bl_n_end_length = d2(bl_n[-1, 0], bl_n[-1, 1], bl_n[-2, 0], bl_n[-2, 1])/(2*box_size)
 
                     x_0, y_0, angle = compute_start_and_angle(baseline=bl_n, idx=0)
                     x_0 = x_0.to(self.device)
                     y_0 = y_0.to(self.device)
                     angle = angle.to(self.device)
 
-                    c_list, bl_end_list, bl_end_length_list = self.model(img=image, box_size=box_size, x_0=x_0, y_0=y_0,
-                                                                         angle_0=angle, reset_idx=1000)
+                    # c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, x_0=x_0, y_0=y_0,
+                    #                                                      angle_0=angle, reset_idx=1000) TODO: CHANGE BACK!!!!!!!!!
+                    c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, baseline=bl_n,
+                                                                         reset_idx=30)
 
+                    # Every tensorboard_img_steps steps save the result to tensorboard:
+                    if eval_steps % tensorboard_img_steps == tensorboard_img_steps-1:
+                        pred_list.append(c_list)
 
                     l_label, l_pred, l_bl_end_label, l_bl_end_pred, l_bl_end_length_label, l_bl_end_length_pred = \
                         prepare_data_for_loss(bl_n, c_list, bl_end_list, bl_n_end_length,
@@ -241,11 +275,29 @@ class TrainerLineRider:
                            + 10 * self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
 
                     running_loss += loss
+                    running_bl_loss += self.criterion_bl(l_pred, l_label)
+                    running_end_loss += 10 * self.criterion_end(l_bl_end_pred, l_bl_end_label)
+                    running_length_loss += 10 * self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
+
                     running_counter += 1
 
-        loss = running_loss/running_counter
+            # Every tensorboard_img_steps steps save the result to tensorboard:
+            if eval_steps % tensorboard_img_steps == tensorboard_img_steps-1:
+                dbimg = draw_baselines(image=image[0], baselines=pred_list)
+                writer.add_image(tag='eval/pred', img_tensor=dbimg, global_step=eval_steps)
 
-        return loss
+        loss = running_loss/running_counter
+        bl_loss = running_bl_loss/running_counter
+        end_loss = running_end_loss/running_counter
+        length_loss = running_end_loss/running_counter
+
+        # Write to tensorboard
+        writer.add_scalar(tag='mse/eval', scalar_value=loss, global_step=eval_steps)
+        writer.add_scalar(tag='bl_loss/eval', scalar_value=bl_loss, global_step=eval_steps)
+        writer.add_scalar(tag='end_loss/eval', scalar_value=end_loss, global_step=eval_steps)
+        writer.add_scalar(tag='length_loss/eval', scalar_value=length_loss, global_step=eval_steps)
+
+        return loss, eval_steps
 
 
     def train(self):
@@ -259,7 +311,9 @@ class TrainerLineRider:
 
         best_model_wts = copy.deepcopy(self.model.state_dict())
         best_mse = float('Inf')
+
         steps = 0
+        eval_steps = 0
 
         for epoch in range(self.epochs):
             print('Epoch {}/{}'.format(epoch+1, self.epochs))
@@ -272,19 +326,15 @@ class TrainerLineRider:
             writer.add_scalar(tag='mse/train', scalar_value=loss,
                               global_step=steps)
 
-            if True:#epoch > 1 and epoch % self.eval_epoch == 0: TODO: change back
-                loss = self._eval()
+            if epoch > 1 and epoch % self.eval_epoch == 0:
+                loss, eval_steps = self._eval(eval_steps, writer)
                 print('Eval: {} loss: {:.4f}'.format('Eval', loss))
-
-                # Write to tensorboard
-                writer.add_scalar(tag='mse/eval', scalar_value=loss,
-                                  global_step=steps)
 
                 # deep copy the model
                 if loss <= best_mse:
                     best_mse = loss
                     best_model_wts = copy.deepcopy(self.model.state_dict())
-                    torch.save(self.model, os.path.join(self.output_folder, self.exp_name + '.pt'))
+                    torch.save(self.model, os.path.join(self.output_folder, 'line_rider', self.exp_name + '.pt'))
 
 
         time_elapsed = time.time() - since
@@ -293,7 +343,7 @@ class TrainerLineRider:
 
         # load best model weights
         self.model.load_state_dict(best_model_wts)
-        torch.save(self.model, os.path.join(self.output_folder, self.exp_name + '.pt'))
+        torch.save(self.model, os.path.join(self.output_folder, 'line_rider', self.exp_name + '.pt'))
 
         writer.close()
 
