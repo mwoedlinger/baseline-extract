@@ -1,0 +1,18 @@
+{
+  "exp_name": "default",
+  "log_dir": "tensorboard",
+  "output_folder": "trained_models",
+  "gpu": 3,
+  "segmentation_gpu": 3,
+  "segmentation_weights": "trained_models/segmentation/GCN_256_cBAD.pt",
+  "lr": 4e-3,
+  "batch_size": 8,
+  "epochs": 120,
+  "eval_epoch": 5,
+  "reset_idx_start": null,
+  "data": {
+    "input_folder": "data/cBAD-ICDAR2019",
+    "max_side": 256,
+    "crop_size": 256
+  }
+}

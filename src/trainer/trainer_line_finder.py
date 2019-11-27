@@ -8,6 +8,7 @@ from ..data.dataset_line_finder import DatasetLineFinder
 from ..utils.visualization import draw_start_points
 from ..model.line_finder import LineFinder
 from ..model.loss import LineFinderLoss
+from ..segmentation.gcn_model import GCN
 
 
 class TrainerLineFinder:
@@ -40,6 +41,13 @@ class TrainerLineFinder:
         self.optimizer, self.scheduler = self.get_optimizer()
         self.dataloaders = self.get_dataloaders()
 
+
+        print('## Loading segmentation model')
+        self.seg_model = GCN(n_classes=4)
+        self.seg_model.load_state_dict(torch.load(self.segmentation_weights, map_location=self.segmentation_device))
+        self.seg_model.to(self.segmentation_device)
+        self.seg_model.eval()
+
     def get_model(self, weights):
         """
         Load the correct model,
@@ -62,9 +70,10 @@ class TrainerLineFinder:
         :return: a list containing the optimizer and the scheduler
         """
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        # optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
 
         # Decay LR by a factor of 'gamma' every 'step_size' epochs
-        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.5)
+        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)#30
 
         return [optimizer, exp_lr_scheduler]
 
@@ -80,9 +89,7 @@ class TrainerLineFinder:
 
         image_datasets = {inf_type: DatasetLineFinder(inf_type=inf_type,
                                                       parameters=self.parameters,
-                                                      device=self.segmentation_device,
-                                                      random_seed=42,
-                                                      seg_model_weights=self.segmentation_weights)
+                                                      random_seed=42)
                           for inf_type in ['train', 'eval']}
 
         dataloaders = {inf_type: torch.utils.data.DataLoader(image_datasets[inf_type],
@@ -102,19 +109,25 @@ class TrainerLineFinder:
         """
         self.model.train()
 
-        tensorboard_img_steps = 499
+        tensorboard_img_steps = 51
 
         running_loss = 0
         running_loc_loss = 0
         running_conf_loss = 0
+        running_conf_anti_loss = 0
         running_counter = 0
 
         # Iterate over data.
         for batch in tqdm(self.dataloaders['train']):
-
             image = batch['image'].to(self.device)
             label = batch['label'].to(self.device)
             label_len = batch['label_len'].to(self.device)
+
+            with torch.no_grad():
+                seg_out = self.seg_model(image)[0]
+                seg_out.detach()
+            image = (image[:, 0:1, :, :] + image[:, 1:2, :, :] + image[:, 2:3, :, :])/3.0
+            image = torch.cat([image, seg_out[:, [0, 2], :, :]], dim=1).detach()
 
             steps += 1#image.size(0)
 
@@ -122,11 +135,12 @@ class TrainerLineFinder:
                 self.optimizer.zero_grad()
 
                 out = self.model(image)
-                loss, loc_loss, conf_loss = self.criterion(out, label, label_len)
+                loss, loc_loss, conf_loss, conf_anti_loss = self.criterion(out, label, label_len)
 
                 running_loss += loss
                 running_loc_loss += loc_loss
                 running_conf_loss += conf_loss
+                running_conf_anti_loss += conf_anti_loss
                 running_counter += image.size(0)
 
                 # backward + optimize
@@ -138,21 +152,24 @@ class TrainerLineFinder:
                 combined = draw_start_points(image=image[0].cpu(), label=out[0].detach(), true_label=label[0][0:label_len[0]])
                 writer.add_image(tag='train/pred', img_tensor=combined, global_step=steps)
 
+
         loss = running_loss/running_counter
         loc_loss = running_loc_loss/running_counter
         conf_loss = running_conf_loss/running_counter
+        conf_anti_loss = running_conf_anti_loss/running_counter
 
         # Write to tensorboard
         writer.add_scalar(tag='loss/train', scalar_value=loss, global_step=steps)
         writer.add_scalar(tag='loc_loss/train', scalar_value=loc_loss, global_step=steps)
         writer.add_scalar(tag='conf_loss/train', scalar_value=conf_loss, global_step=steps)
+        writer.add_scalar(tag='conf_anti_loss/train', scalar_value=conf_anti_loss, global_step=steps)
 
-        return loss, loc_loss, conf_loss, steps
+        return loss, loc_loss, conf_loss, conf_anti_loss, steps
 
     def _eval(self, writer, eval_steps):
         self.model.eval()
 
-        tensorboard_img_steps = 499
+        tensorboard_img_steps = 51
 
         running_loss = 0
         running_loc_loss = 0
@@ -167,10 +184,17 @@ class TrainerLineFinder:
                 label = batch['label'].to(self.device)
                 label_len = batch['label_len'].to(self.device)
 
+                with torch.no_grad():
+                    seg_out = self.seg_model(image)[0]
+                    seg_out.detach()
+                image = (image[:, 0:1, :, :] + image[:, 1:2, :, :] + image[:, 2:3, :, :]) / 3.0
+                image = torch.cat([image, seg_out[:, [0, 2], :, :]], dim=1).detach()
+
                 eval_steps += 1#image.size(0)
 
                 out = self.model(image)
-                loss, loc_loss, conf_loss = self.criterion(out, label, label_len)
+                loss, loc_loss, conf_loss, conf_anti_loss = self.criterion(out, label, label_len)
+                conf_loss = conf_loss + conf_anti_loss
 
                 running_loss += loss
                 running_loc_loss += loc_loss
@@ -207,8 +231,9 @@ class TrainerLineFinder:
             print('Epoch {}/{}'.format(epoch+1, self.epochs))
             print('-' * 10)
 
-            loss, loc_loss, conf_loss, steps = self._train_epoch(steps, writer)
-            print('{}:\nLoss: {:.4f} \nLoc_loss: {:.4f} \nConf_loss: {:.4f}'.format('Train', loss, loc_loss, conf_loss))
+            loss, loc_loss, conf_loss, conf_anti_loss, steps = self._train_epoch(steps, writer)
+            print('{}:\nLoss: {:.4f} \nLoc_loss: {:.4f} \nConf_loss: {:.4f} \nConf_anti_loss: {:4f}'.format(
+                'Train', loss, loc_loss, conf_loss, conf_anti_loss))
 
             if epoch > 1 and epoch % self.eval_epoch == 0:
                 loss, loc_loss, conf_loss, eval_steps = self._eval(writer, eval_steps)

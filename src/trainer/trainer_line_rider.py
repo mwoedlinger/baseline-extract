@@ -39,6 +39,11 @@ class TrainerLineRider:
         self.optimizer, self.scheduler = self.get_optimizer()
         self.dataloaders = self.get_dataloaders()
 
+        print('## Trainer settings:')
+        print('gpu:         {}'.format(str(self.gpu)))
+        print('side_length: {}'.format(str(self.max_side)))
+        print('epochs:      {}\n'.format(str(self.epochs)))
+
     def get_model(self, weights):
         """
         Load the correct model,
@@ -94,7 +99,7 @@ class TrainerLineRider:
 
         return dataloaders
 
-    def _train_epoch(self, steps, epoch, writer):
+    def _train_epoch(self, steps, writer):
         """
         Train the model for one epoch. Returns a a tuple containing the loss and the current step counter.
         :param steps: starting point for step counter. The function returns the updated steps.
@@ -133,7 +138,7 @@ class TrainerLineRider:
 
             start_points = torch.tensor([[bl[0, 0], bl[0, 1]] for bl in baselines[0:number_of_baselines]])
             box_size = get_median_diff(start_points)/2.0
-            box_size = min(10, max(32, box_size))
+            box_size = min(5, max(16, box_size))
 
             steps += image.size(0)
 
@@ -158,7 +163,6 @@ class TrainerLineRider:
                     # Every tensorboard_img_steps steps save the result to tensorboard:
                     if steps % tensorboard_img_steps == tensorboard_img_steps-1:
                         pred_list.append(c_list)
-                        print(str(n) + ': ' + str(c_list))
 
                     l_label, l_pred, l_bl_end_label, l_bl_end_pred, l_bl_end_length_label, l_bl_end_length_pred = \
                         prepare_data_for_loss(bl_n, c_list, bl_end_list, bl_n_end_length,
@@ -231,7 +235,7 @@ class TrainerLineRider:
 
             start_points = torch.tensor([[bl[0, 0], bl[0, 1]] for bl in baselines[0:number_of_baselines]])
             box_size = get_median_diff(start_points)/2.0
-            box_size = min(10, max(32, box_size))
+            box_size = min(5, max(16, box_size))
 
             image = image.to(self.device)
 
@@ -254,10 +258,10 @@ class TrainerLineRider:
                     y_0 = y_0.to(self.device)
                     angle = angle.to(self.device)
 
-                    # c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, x_0=x_0, y_0=y_0,
-                    #                                                      angle_0=angle, reset_idx=1000) TODO: CHANGE BACK!!!!!!!!!
-                    c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, baseline=bl_n,
-                                                                         reset_idx=30)
+                    c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, x_0=x_0,
+                                                                            y_0=y_0, angle_0=angle, reset_idx=1000)
+                    # c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, baseline=bl_n,
+                    #                                                      reset_idx=30)
 
                     # Every tensorboard_img_steps steps save the result to tensorboard:
                     if eval_steps % tensorboard_img_steps == tensorboard_img_steps-1:
@@ -306,6 +310,8 @@ class TrainerLineRider:
         Prints current stats to the console.
         :return: The trained model
         """
+        print('## Start training:')
+
         since = time.time()
         writer = SummaryWriter(log_dir=os.path.join(self.log_dir, self.exp_name))
 
@@ -319,7 +325,7 @@ class TrainerLineRider:
             print('Epoch {}/{}'.format(epoch+1, self.epochs))
             print('-' * 10)
 
-            loss, steps = self._train_epoch(steps, epoch, writer)
+            loss, steps = self._train_epoch(steps, writer)
             print('Train: {} loss: {:.4f}'.format('Train', loss))
 
             # Write to tensorboard

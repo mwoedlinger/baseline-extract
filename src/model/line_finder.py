@@ -4,13 +4,20 @@ import torch.nn as nn
 
 
 class LineFinder(nn.Module):
-
+    """
+    The model has 4 out channels:
+    0: x
+    1: y
+    2: angle
+    3: confidence
+    """
     def __init__(self, device: str):
         super(LineFinder, self).__init__()
         self.device = device
         self.out_dim = 4
 
-        resnet = torchvision.models.resnet50(pretrained=True)
+        ################################
+        resnet = torchvision.models.resnet34(pretrained=True)
 
         # for m in resnet.modules():
         #     if isinstance(m, nn.BatchNorm2d):
@@ -22,30 +29,35 @@ class LineFinder(nn.Module):
             resnet.maxpool)
         layer1 = resnet.layer1
         layer2 = resnet.layer2
-        # layer3 = resnet.layer3
+        layer3 = resnet.layer3
         # layer4 = resnet.layer4
 
-        # out_channels = 5:
-        # 0: x
-        # 1: y
-        # 2: angle
-        # 3: confidence
+
         self.model = nn.Sequential(
             layer0,
             layer1,
             layer2,
-            # layer3,
-            # layer4,#TODO: check if layer 4 should be used. layer 4 reduces the resolution to 32x32 patches
-            nn.Conv2d(in_channels=512, out_channels=self.out_dim, kernel_size=1))
-            # nn.Conv2d(in_channels=256, out_channels=self.out_dim, kernel_size=1))
+            layer3,
+            # layer4,
+            nn.Conv2d(in_channels=256, out_channels=self.out_dim, kernel_size=1)
+        )
+
+        ########################################
+
+        # vgg16 = torchvision.models.vgg16_bn(pretrained=True)
+        #
+        # self.model = nn.Sequential(
+        #     vgg16.features,
+        #     nn.Conv2d(in_channels=512, out_channels=self.out_dim, kernel_size=1)
+        # )
 
         self.sigmoid = nn.Sigmoid()
         # self.tanh = nn.Tanh()
         self.flatten_space = nn.Flatten(start_dim=2, end_dim=3)
 
     def forward(self, x):
-        patch_size = 8.0
-        # patch_size = 16.0
+        patch_size = 16.0
+        # patch_size = 32.0
 
         out = self.model(x)
 

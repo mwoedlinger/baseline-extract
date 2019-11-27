@@ -24,7 +24,7 @@ class LineFinderLoss(nn.Module):
       p_m:    prediction coordinates
       c_m:    confidence scores
     """
-    def __init__(self, alpha=0.05):
+    def __init__(self, alpha=0.1):
         super(LineFinderLoss, self).__init__()
         self.mse = nn.MSELoss()
         self.alpha = alpha
@@ -85,9 +85,9 @@ class LineFinderLoss(nn.Module):
                 x_c = x_c.to(inp.device)
 
                 location_loss += (normed_diff * X).sum()/2.0
-                confidence_loss += -(log_c_exp * X).sum() - (log_c_anti * x_c).sum()
+                confidence_loss += -10*(log_c_exp * X).sum() - (log_c_anti * x_c).sum()+0.0001
 
-        loss = self.alpha * location_loss + confidence_loss
+        loss = self.alpha* location_loss + confidence_loss
 
-        return loss, self.alpha * location_loss, confidence_loss
+        return loss, self.alpha * location_loss, -(log_c_exp * X).sum(), -(log_c_anti * x_c).sum()
 

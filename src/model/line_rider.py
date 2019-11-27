@@ -21,7 +21,7 @@ class LineRider(nn.Module):
         self.input_size = input_size
 
         # in: [N, 3, 32, 32] -> out: [N, 8]
-        self.model = nn.Sequential(
+        self.model_line = nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
             nn.ReLU(),
             nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3, padding=2),
@@ -43,9 +43,8 @@ class LineRider(nn.Module):
             nn.Linear(in_features=64, out_features=8)
         )
 
-
         # in: [N, 3, 32, 32] -> out: [N, 8]
-        self.model_brain = nn.Sequential(
+        self.model_end = nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
             nn.ReLU(),
             nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3, padding=2),
@@ -68,38 +67,11 @@ class LineRider(nn.Module):
         )
 
         self.lin_out = nn.Linear(in_features=8, out_features=2)
-        self.lin_out_brain = nn.Linear(in_features=8, out_features=2)
-        # self.lin_out = nn.Linear(in_features=16, out_features=4)
-        # self.lin_hidden = nn.Linear(in_features=16, out_features=8)
-
-    # def rider_eyes(self, x): #, hidden):
-    #     """
-    #     A RNN for baseline extraction.
-    #     The model has 4 outputs:
-    #         0:  The sin of the angle of the next baseline segment.
-    #         1:  The Cos of the angle of the next baseline segment.
-    #         2:  A propability for if the end of the baseline is reached.
-    #         3:  The length of the next baseline segment (Only relevant if last segment).
-    #     :param x:       Input
-    #     :param hidden:  The hidden State
-    #     :return:        A tuple containing the output and the hidden state both as a torch tensor
-    #     """
-    #     cnn_out = self.model(x)
-    #     out = self.lin_out(cnn_out)
-    #
-    #     # combined = torch.cat((cnn_out, hidden), dim=1)
-    #     # hidden = self.lin_hidden(combined)
-    #     # out = self.lin_out(combined)
-    #
-    #     sina = nn.Tanh()(out[:, 0])
-    #     cosa = nn.Tanh()(out[:, 1])
-    #     bl_end = nn.Sigmoid()(out[:, 2])
-    #     bl_end_length = nn.Sigmoid()(out[:, 3])
-    #
-    #     return torch.cat([sina, cosa, bl_end, bl_end_length], dim=0)#, hidden
+        self.lin_out_end = nn.Linear(in_features=8, out_features=2)
 
 
-    def rider_eyes(self, x): #, hidden):
+
+    def rider_line(self, x): #, hidden):
         """
         A RNN for baseline extraction.
         The model has 2 outputs:
@@ -108,7 +80,7 @@ class LineRider(nn.Module):
         :param x:       Input
         :return:        A tuple containing the output and the hidden state both as a torch tensor
         """
-        cnn_out = self.model(x)
+        cnn_out = self.model_line(x)
         out = self.lin_out(cnn_out)
 
         sina = nn.Tanh()(out[:, 0])
@@ -116,7 +88,7 @@ class LineRider(nn.Module):
 
         return torch.cat([sina, cosa], dim=0)
 
-    def rider_brain(self, x):
+    def rider_end(self, x):
         """
         A RNN for baseline extraction.
         The model has 2 outputs:
@@ -125,8 +97,8 @@ class LineRider(nn.Module):
         :param x:       Input
         :return:        A tuple containing the output and the hidden state both as a torch tensor
         """
-        cnn_out = self.model_brain(x)
-        out = self.lin_out_brain(cnn_out)
+        cnn_out = self.model_end(x)
+        out = self.lin_out_end(cnn_out)
 
         bl_end = nn.Sigmoid()(out[:, 0])
         bl_end_length = nn.Sigmoid()(out[:, 1])
@@ -165,8 +137,10 @@ class LineRider(nn.Module):
             y = y.to(self.device)
             angle = angle.to(self.device)
 
+            self.data_augmentation = True
             train = True
         else:
+            self.data_augmentation = False
             train = False
 
         sina = torch.sin(angle)
@@ -226,9 +200,9 @@ class LineRider(nn.Module):
             img_patch = torch.nn.functional.grid_sample(img, agrid, mode='nearest', padding_mode='zeros')
             patches.append(img_patch) #TODO: delete
 
-            # out, hidden = self.rider_eyes(img_patch, hidden=hidden)
-            out = self.rider_eyes(img_patch)
-            out_brain = self.rider_brain(img_patch)
+            # out, hidden = self.rider_line(img_patch, hidden=hidden)
+            out = self.rider_line(img_patch)
+            out_end = self.rider_end(img_patch)
 
             norm = torch.sqrt(out[0]**2 + out[1]**2)
             sina_new = out[0]/norm
@@ -249,8 +223,8 @@ class LineRider(nn.Module):
 
             # bl_end = out[2]
             # bl_end_length = out[3]
-            bl_end = out_brain[0]
-            bl_end_length = out_brain[1]
+            bl_end = out_end[0]
+            bl_end_length = out_end[1]
             bl_end_list = torch.cat([bl_end_list, bl_end.unsqueeze(0)], dim=0)
             bl_end_length_list = torch.cat([bl_end_length_list, bl_end_length.unsqueeze(0)], dim=0)
 
@@ -275,9 +249,9 @@ class LineRider(nn.Module):
                     x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
                     y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
             else:
-                if bl_end > 0.5:
-                    x = x + 2 * box_size * (cosa * cosa_new - sina * sina_new)
-                    y = y - 2 * box_size * (sina * cosa_new + cosa * sina_new)
+                if bl_end > 0.8:
+                    x = x + 2 * box_size * (cosa * cosa_new - sina * sina_new) * bl_end_length
+                    y = y - 2 * box_size * (sina * cosa_new + cosa * sina_new) * bl_end_length
 
                     x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
                     y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)

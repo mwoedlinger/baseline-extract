@@ -9,11 +9,11 @@ from .xml_parser import XMLParser
 from ..utils.distances import d2
 from ..utils.normalize_baselines import compute_start_and_angle
 from ..segmentation.gcn_model import GCN
+import time
 
 
 class DatasetLineFinder(Dataset):
-    def __init__(self, inf_type: str, parameters: dict, device: str, random_seed: int=42,
-                 seg_model_weights: str=os.path.join('trained_moels', 'segmentation', 'GCN_512_cBAD.pt')):
+    def __init__(self, inf_type: str, parameters: dict, random_seed: int=42):
         random.seed(random_seed)
         self.input_folder = os.path.join(parameters['input_folder'], inf_type)
         self.inf_type = inf_type
@@ -29,11 +29,6 @@ class DatasetLineFinder(Dataset):
 
         self.max_bl_length = 1000
         self.max_bl_no = 2500
-
-        # print('## Loading segmentation model')
-        # self.seg_model = GCN(n_classes=3)
-        # self.seg_model.load_state_dict(torch.load(seg_model_weights, map_location=device))
-        # self.seg_model.eval()
 
     def __len__(self) -> int:
         return len(self.images)
@@ -61,23 +56,25 @@ class DatasetLineFinder(Dataset):
         baselines = parser.get_baselines()
         baselines = [[p.get_as_list() for p in bl] for bl in baselines]
 
+
         # Resize image:
         image = self.transform_resize(image)
-        # seg_out = self.seg_model(self.transform_to_tensor(image).unsqueeze(0))[0][0]
-        # image = self.transform_to_tensor(self.transform_grayscale(image))
-        # image = torch.cat([image, seg_out[0:2, :, :]], dim=0).detach()
+        image = self.transform_normalize(self.transform_to_tensor(image))
+
         # image = self.transform_to_pil(image)
-
-        patch_diff = self.patch_size/2#self.max_side-self.patch_size
-
+        #
+        # patch_diff = self.patch_size/2#self.max_side-self.patch_size
+        #
         # Crop patch:
-        i = random.randint(-patch_diff/2, self.max_side - self.patch_size + patch_diff/2)
-        j = random.randint(-patch_diff/2, self.max_side - self.patch_size + patch_diff/2)
-        height = self.patch_size
-        width = self.patch_size
-        image = transforms.functional.crop(img=image, i=i, j=j, h=height, w=width)
+        # i = random.randint(-patch_diff/2, self.max_side - self.patch_size + patch_diff/2)
+        # j = random.randint(-patch_diff/2, self.max_side - self.patch_size + patch_diff/2)
+        # height = self.patch_size
+        # width = self.patch_size
+        # image = transforms.functional.crop(img=image, i=i, j=j, h=height, w=width)
+        #
+        # baselines = [[[p[0]-j, p[1]-i] for p in bl] for bl in baselines]
 
-        baselines = [[[p[0]-j, p[1]-i] for p in bl] for bl in baselines]
+
         start_points_and_angles = [compute_start_and_angle(baseline=torch.tensor(bl),
                                                            idx=0,
                                                            data_augmentation=False)
@@ -86,9 +83,10 @@ class DatasetLineFinder(Dataset):
         labels = torch.tensor(labels)
         labels_exp = torch.cat([labels, torch.tensor([[-1.0, -1.0, -1.0]]*(10000-len(labels)))], dim=0)
 
-        sample = {'image': self.transform_normalize(self.transform_to_tensor(image)),
+        sample = {'image': image,
                   'label': labels_exp,
-                  'label_len': len(labels)}
+                  'label_len': len(labels)
+                  }
 
         return sample
 
