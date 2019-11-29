@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import random
+import math
 from ..utils.normalize_baselines import compute_start_and_angle
 
 
@@ -66,12 +67,12 @@ class LineRider(nn.Module):
             nn.Linear(in_features=64, out_features=8)
         )
 
-        self.lin_out = nn.Linear(in_features=8, out_features=2)
+        self.lin_out = nn.Linear(in_features=8, out_features=3)
         self.lin_out_end = nn.Linear(in_features=8, out_features=2)
 
 
 
-    def rider_line(self, x): #, hidden):
+    def rider_line(self, x):
         """
         A RNN for baseline extraction.
         The model has 2 outputs:
@@ -85,8 +86,9 @@ class LineRider(nn.Module):
 
         sina = nn.Tanh()(out[:, 0])
         cosa = nn.Tanh()(out[:, 1])
+        angle = nn.Tanh()(out[:, 2])*math.pi/2
 
-        return torch.cat([sina, cosa], dim=0)
+        return torch.cat([sina, cosa, angle], dim=0)
 
     def rider_end(self, x):
         """
@@ -120,8 +122,9 @@ class LineRider(nn.Module):
         """
 
         # The box is twice as wide as tall.
-        box_width = box_size*4
+        box_width = box_size * 4
         box_height = box_size
+        step_size = box_size * 2
 
         patches = [] #TODO: delete
 
@@ -205,8 +208,11 @@ class LineRider(nn.Module):
             out_end = self.rider_end(img_patch)
 
             norm = torch.sqrt(out[0]**2 + out[1]**2)
-            sina_new = out[0]/norm
-            cosa_new = out[1]/norm
+            # sina_new = out[0]/norm
+            # cosa_new = out[1]/norm
+            angle_out = out[2]
+            sina_new = (out[0]/norm + torch.sin(angle_out))/2
+            cosa_new = (out[1]/norm + torch.cos(angle_out))/2
             # TODO: predict 3 values: sina, cosa and the angle itself then average the two angle predictions and
             # sina and cosa predictions.
 
@@ -215,8 +221,8 @@ class LineRider(nn.Module):
             # y_out = out[1]
             # angle_out = out[2]
             #
-            # dx = 2 * box_size * (torch.sin(angle)*y_out + torch.cos(angle)*x_out)
-            # dy = 2 * box_size * (torch.sin(angle)*y_out + torch.cos(angle)*y_out)
+            # dx = step_size * (torch.sin(angle)*y_out + torch.cos(angle)*x_out)
+            # dy = step_size * (torch.sin(angle)*y_out + torch.cos(angle)*y_out)
             #
             # angle = angle + (angle_out + torch.atan(y_out/x_out)) TODO: necessary?
             ###################################
@@ -243,30 +249,31 @@ class LineRider(nn.Module):
 
                     break
                 else:
-                    x = x + 2 * box_size * (cosa * cosa_new - sina * sina_new)
-                    y = y - 2 * box_size * (sina * cosa_new + cosa * sina_new)
+                    x = x + step_size * (cosa * cosa_new - sina * sina_new)
+                    y = y - step_size * (sina * cosa_new + cosa * sina_new)
 
                     x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
                     y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
             else:
                 if bl_end > 0.8:
-                    x = x + 2 * box_size * (cosa * cosa_new - sina * sina_new) * bl_end_length
-                    y = y - 2 * box_size * (sina * cosa_new + cosa * sina_new) * bl_end_length
+                    x = x + step_size * (cosa * cosa_new - sina * sina_new) * bl_end_length
+                    y = y - step_size * (sina * cosa_new + cosa * sina_new) * bl_end_length
 
                     x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
                     y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
 
                     break
                 else:
-                    x = x + 2 * box_size * (cosa * cosa_new - sina * sina_new)
-                    y = y - 2 * box_size * (sina * cosa_new + cosa * sina_new)
+                    x = x + step_size * (cosa * cosa_new - sina * sina_new)
+                    y = y - step_size * (sina * cosa_new + cosa * sina_new)
 
                     x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
                     y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
 
             sina = sina_new
             cosa = cosa_new
-            angle += torch.atan(sina / cosa)
+            # angle += torch.atan(sina / cosa)
+            angle += (torch.atan(sina / cosa) + angle_out)/2
 
             if self.data_augmentation == True:
                 x_range = max(2, int(torch.sin(angle) * box_size/6))

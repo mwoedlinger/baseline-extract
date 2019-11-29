@@ -66,16 +66,16 @@ class LineFinder(nn.Module):
         batch_size = out.shape[0]
 
         # Moves the coordinates from the small boxes to global coordinates
-        # Not sure if needed. TODO: check if it makes a difference
         offset_tensor = torch.zeros(batch_size, self.out_dim, h, w)
         for b in range(batch_size):
             for row in range(h):
                 for column in range(w):
                     offset_tensor[b, 0, row, column] = patch_size / 2.0 + row * patch_size
                     offset_tensor[b, 1, row, column] = patch_size / 2.0 + column * patch_size
+
                     out[b, -1, row, column] = self.sigmoid(out[b, -1, row, column])
-                    # out[b, 0, row, column] = patch_size*self.tanh(out[b, 0, row, column])
-                    # out[b, 1, row, column] = patch_size*self.tanh(out[b, 1, row, column])
+                    out[b, 0, row, column] = patch_size/2.0 * self.tanh(out[b, 0, row, column]) #TODO: comment
+                    out[b, 1, row, column] = patch_size/2.0 * self.tanh(out[b, 1, row, column]) #TODO: comment
 
         offset_tensor = offset_tensor.to(self.device)
 

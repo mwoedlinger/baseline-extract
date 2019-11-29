@@ -9,8 +9,7 @@ from ..utils.normalize_baselines import normalize_baselines, compute_start_and_a
 from ..utils.visualization import draw_baselines
 from ..model.line_rider import LineRider
 from ..model.loss import L12Loss
-from ..utils.distances import d2
-from ..utils.distances import get_median_diff
+from ..utils.distances import get_median_diff, d2, get_smallest_distance
 
 
 class TrainerLineRider:
@@ -137,8 +136,6 @@ class TrainerLineRider:
             number_of_baselines = min([idx for idx in range(0, len(bl_lengths)) if bl_lengths[idx] == -1])
 
             start_points = torch.tensor([[bl[0, 0], bl[0, 1]] for bl in baselines[0:number_of_baselines]])
-            box_size = get_median_diff(start_points)/2.0
-            box_size = min(5, max(16, box_size))
 
             steps += image.size(0)
 
@@ -150,6 +147,13 @@ class TrainerLineRider:
                 for n in range(number_of_baselines):
                     # zero the parameter gradients
                     self.optimizer.zero_grad()
+
+                    # Compute box size
+                    box_size = int(get_smallest_distance(start_points[n], start_points))
+                    box_size = max(48, box_size)
+                    if box_size == 0:
+                        box_size = min(10, max(32, get_median_diff(start_points)/2.0))
+                    # TODO: make box_size larger during training
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]
@@ -172,13 +176,13 @@ class TrainerLineRider:
                     # the length of the last baseline segment and the classification loss for the prediction of
                     # the baseline end.
                     loss = self.criterion_bl(l_pred, l_label) \
-                           + 10*self.criterion_end(l_bl_end_pred, l_bl_end_label) \
-                           + 10*self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
+                           + self.criterion_end(l_bl_end_pred, l_bl_end_label) \
+                           + self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
 
                     running_loss += loss
                     running_bl_loss += self.criterion_bl(l_pred, l_label)
-                    running_end_loss += 10 * self.criterion_end(l_bl_end_pred, l_bl_end_label)
-                    running_length_loss += 10 * self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
+                    running_end_loss += self.criterion_end(l_bl_end_pred, l_bl_end_label)
+                    running_length_loss += self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
 
                     running_counter += 1
 
@@ -234,8 +238,6 @@ class TrainerLineRider:
             number_of_baselines = min([idx for idx in range(0, len(bl_lengths)) if bl_lengths[idx] == -1])
 
             start_points = torch.tensor([[bl[0, 0], bl[0, 1]] for bl in baselines[0:number_of_baselines]])
-            box_size = get_median_diff(start_points)/2.0
-            box_size = min(5, max(16, box_size))
 
             image = image.to(self.device)
 
@@ -247,6 +249,12 @@ class TrainerLineRider:
 
             with torch.no_grad():
                 for n in range(number_of_baselines):
+                    # Compute box size
+                    box_size = int(get_smallest_distance(start_points[n], start_points))
+                    box_size = max(48, box_size)
+                    if box_size == 0:
+                        box_size = min(10, max(32, get_median_diff(start_points)/2.0))
+
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]
                     bl_n = normalize_baselines(bl, 2*box_size) #TODO: make it clearer that 2*box_size is used

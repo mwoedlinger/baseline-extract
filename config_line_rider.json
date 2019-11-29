@@ -1,18 +1,18 @@
 {
-  "exp_name": "default",
+  "exp_name": "angle_avg",
   "log_dir": "tensorboard",
   "output_folder": "trained_models",
   "gpu": 2,
-  "segmentation_gpu": 3,
+  "segmentation_gpu": 2,
   "segmentation_weights": "trained_models/segmentation/GCN_256_cBAD.pt",
   "lr": 4e-4,
   "batch_size": 1,
-  "epochs": 30,
+  "epochs": 10,
   "eval_epoch": 2,
   "reset_idx_start": 1,
   "data": {
     "input_folder": "data/cBAD-ICDAR2019",
-    "max_side": 512,
+    "max_side": 1024,
     "crop_size": null
   }
 }

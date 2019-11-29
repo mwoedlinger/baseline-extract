@@ -32,3 +32,13 @@ def get_median_diff(start_points):
         return np.median(diff)
     else:
         return -1
+
+def get_smallest_distance(point, point_list):
+    d_min = 1e10
+
+    for p in point_list:
+        d = d2(p[0], p[1], point[0], point[1])
+        if d > 0:
+            d_min = min(d_min, d)
+
+    return d_min
