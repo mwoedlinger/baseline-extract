@@ -43,29 +43,74 @@ class LineRider(nn.Module):
             nn.Flatten(),
             nn.Linear(in_features=64, out_features=8)
         )
+        # self.model_line = nn.Sequential(
+        #     nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, padding=2),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=2),
+        #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=2),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=2),
+        #     nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=2),
+        #     nn.Flatten(),
+        #     nn.Linear(in_features=256, out_features=8)
+        # )
+        # self.model_line = nn.Sequential(
+        #     nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=2),
+        #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=2),
+        #     nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3),
+        #     nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.Flatten(),
+        #     nn.Linear(in_features=256, out_features=8)
+        # )
 
         # in: [N, 3, 32, 32] -> out: [N, 8]
         self.model_end = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
+            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=(5, 3), stride=(2, 1)),
             nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3, padding=2),
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(5, 3), stride=(2, 1)),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3),
+            nn.AvgPool2d(kernel_size=(1, 14)),
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(1, 2)),
             nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=3, padding=2),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
+            # nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, padding=2),
+            # nn.ReLU(),
+            # nn.AvgPool2d(kernel_size=8),
             nn.Flatten(),
-            nn.Linear(in_features=64, out_features=8)
+            nn.Linear(in_features=5 * 64, out_features=8)
         )
+        # self.model_end = nn.Sequential(
+        #     nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=2),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=4),
+        #     nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, padding=2),
+        #     nn.ReLU(),
+        #     nn.AvgPool2d(kernel_size=8),
+        #     nn.Flatten(),
+        #     nn.Linear(in_features=256, out_features=8)
+        # )
 
         self.lin_out = nn.Linear(in_features=8, out_features=3)
         self.lin_out_end = nn.Linear(in_features=8, out_features=2)
@@ -107,7 +152,7 @@ class LineRider(nn.Module):
 
         return torch.cat([bl_end, bl_end_length], dim=0)
 
-    def forward(self, img, box_size, x_0=None, y_0=None, angle_0=None, baseline=None, reset_idx: int = 4):
+    def forward(self, img, box_size, sp=None, ep=None, angle_0=None, baseline=None, reset_idx: int = 4):
         """
         If a baseline is provided the model assumes training mode which means every fourth baseline point it will
         reset to the label given in 'baseline'. This also means that the computation graph is detached from
@@ -121,38 +166,50 @@ class LineRider(nn.Module):
                     of the baseline. [k, 0] is the x and [k, 1] is the y coordinate of point k.
         """
 
+        # GET BASELINE, START AND END POINTS
         # The box is twice as wide as tall.
         box_width = box_size * 4
         box_height = box_size
         step_size = box_size * 2
 
-        patches = [] #TODO: delete
-
-        x = x_0
-        y = y_0
-        angle = angle_0
-        #hidden = torch.tensor([0]*8).float().unsqueeze(0).to(self.device)
-
-        # If baseline is provided extract start point and start angle from baseline
         if baseline is not None:
+            mode = 'baseline'
+        elif ep is not None:
+            mode = 'sp_ep'
+        else:
+            mode = 'sp'
+
+        if mode == 'baseline':
             x, y, angle = compute_start_and_angle(baseline, 0, data_augmentation=self.data_augmentation)
             x = x.to(self.device)
             y = y.to(self.device)
             angle = angle.to(self.device)
 
-            self.data_augmentation = True
-            train = True
+            sp = torch.tensor([x, y]).to(self.device)
+            ep = torch.tensor([baseline[-1, 0], baseline[-1, 1]]).to(self.device)
+        elif mode == 'sp_ep':
+            x = sp[0]
+            y = sp[1]
+            angle = angle_0
+
+            max_dist = torch.sqrt(torch.pow(sp[0]-ep[0], 2) + torch.pow(sp[0]-ep[0], 2))
+        elif mode == 'sp':
+            x = sp[0]
+            y = sp[1]
+            angle = angle_0
         else:
-            self.data_augmentation = False
-            train = False
+            raise NotImplementedError
 
-        sina = torch.sin(angle)
-        cosa = torch.cos(angle)
-
+        # PREPARE OUTPUT LISTS
+        patches = []
         x_list = x.clone().unsqueeze(0)
         y_list = y.clone().unsqueeze(0)
         bl_end_list = torch.tensor(0.0).unsqueeze(0).to(self.device)
         bl_end_length_list = torch.tensor(0.0).unsqueeze(0).to(self.device)
+
+        # INITIALIZE EVERYTHING
+        sina = torch.sin(angle)
+        cosa = torch.cos(angle)
 
         img_w = img.size(2)
         img_h = img.size(3)
@@ -172,6 +229,7 @@ class LineRider(nn.Module):
         scale_x = w_box_ratio
         scale_y = h_box_ratio
 
+        # LOOP OVER THE BASELINE
         for idx in range(1, int(img_w / box_size) + 5):
             alpha = angle
 
@@ -201,11 +259,22 @@ class LineRider(nn.Module):
 
             agrid = torch.nn.functional.affine_grid(theta, size).to(self.device)
             img_patch = torch.nn.functional.grid_sample(img, agrid, mode='nearest', padding_mode='zeros')
-            patches.append(img_patch) #TODO: delete
+            patches.append(img_patch)
 
             # out, hidden = self.rider_line(img_patch, hidden=hidden)
             out = self.rider_line(img_patch)
-            out_end = self.rider_end(img_patch)
+            if mode in ['baseline', 'sp']:
+                out_end = self.rider_end(img_patch)
+
+                bl_end = out_end[0]
+                bl_end_length = out_end[1]
+                bl_end_list = torch.cat([bl_end_list, bl_end.unsqueeze(0)], dim=0)
+                bl_end_length_list = torch.cat([bl_end_length_list, bl_end_length.unsqueeze(0)], dim=0)
+            else:
+                out_end = torch.tensor([0.0, 0.0]).to(self.device)
+
+                bl_end = out_end[0]
+                bl_end_length = out_end[1]
 
             norm = torch.sqrt(out[0]**2 + out[1]**2)
             # sina_new = out[0]/norm
@@ -213,8 +282,6 @@ class LineRider(nn.Module):
             angle_out = out[2]
             sina_new = (out[0]/norm + torch.sin(angle_out))/2
             cosa_new = (out[1]/norm + torch.cos(angle_out))/2
-            # TODO: predict 3 values: sina, cosa and the angle itself then average the two angle predictions and
-            # sina and cosa predictions.
 
             ################################### TODO: test if this works better:
             # x_out = out[0]
@@ -227,18 +294,40 @@ class LineRider(nn.Module):
             # angle = angle + (angle_out + torch.atan(y_out/x_out)) TODO: necessary?
             ###################################
 
-            # bl_end = out[2]
-            # bl_end_length = out[3]
-            bl_end = out_end[0]
-            bl_end_length = out_end[1]
-            bl_end_list = torch.cat([bl_end_list, bl_end.unsqueeze(0)], dim=0)
-            bl_end_length_list = torch.cat([bl_end_length_list, bl_end_length.unsqueeze(0)], dim=0)
-
-            # if bl_end < 0.5 the network predicted the end of the baseline.
-            # The value of bl_end_length is then the quotient of box_size and the length of the final baseline segment.
             # cos(a + b) = cos(a)*cos(b) - sin(a)*sin(b)
             # sin(a + b) = sin(a)*cos(b) + cos(a)*sin(b)
-            if train:
+            if mode == 'sp':
+                # if bl_end > 0.8 the network predicted the end of the baseline.
+                # The value of bl_end_length is then the quotient of box_size and the length of the final baseline segment.
+                if bl_end > 0.8:
+                    x = x + step_size * (cosa * cosa_new - sina * sina_new) * bl_end_length
+                    y = y - step_size * (sina * cosa_new + cosa * sina_new) * bl_end_length
+
+                    x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
+                    y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
+
+                    break
+                else:
+                    x = x + step_size * (cosa * cosa_new - sina * sina_new)
+                    y = y - step_size * (sina * cosa_new + cosa * sina_new)
+
+                    x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
+                    y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
+
+            elif mode == 'sp_ep':
+                x = x + step_size * (cosa * cosa_new - sina * sina_new)
+                y = y - step_size * (sina * cosa_new + cosa * sina_new)
+
+                if torch.sqrt(torch.pow(sp[0] - x, 2) + torch.pow(sp[1] - y, 2)) > max_dist:
+                    x_list = torch.cat([x_list, ep[0].unsqueeze(0)], dim=0)
+                    y_list = torch.cat([y_list, ep[1].unsqueeze(0)], dim=0)
+
+                    break
+                else:
+                    x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
+                    y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
+
+            elif mode == 'baseline':
                 # if (reset_idx < 6 and len(baseline) <= (idx + 1)) or (reset_idx >= 6 and bl_end > 0.5):
                 if len(baseline) == (idx + 1):
                     x = baseline[-1, 0]
@@ -255,20 +344,7 @@ class LineRider(nn.Module):
                     x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
                     y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
             else:
-                if bl_end > 0.8:
-                    x = x + step_size * (cosa * cosa_new - sina * sina_new) * bl_end_length
-                    y = y - step_size * (sina * cosa_new + cosa * sina_new) * bl_end_length
-
-                    x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
-                    y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
-
-                    break
-                else:
-                    x = x + step_size * (cosa * cosa_new - sina * sina_new)
-                    y = y - step_size * (sina * cosa_new + cosa * sina_new)
-
-                    x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
-                    y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
+                raise NotImplementedError
 
             sina = sina_new
             cosa = cosa_new
@@ -282,18 +358,20 @@ class LineRider(nn.Module):
                 y += random.randint(-y_range, y_range)
                 angle += random.uniform(-0.3, 0.3)
 
-            # Every "reset_idx" step reset point and angle to the true label.
-            if idx % reset_idx == reset_idx-1 and train:
-                if len(baseline) > idx+1:
-                    x, y, angle = compute_start_and_angle(baseline, idx, data_augmentation=self.data_augmentation)
-                    x = x.to(self.device)
-                    y = y.to(self.device)
-                    angle = angle.to(self.device)
+            if mode == 'baseline':
+                # Every "reset_idx" step reset point and angle to the true label.
+                if idx % reset_idx == reset_idx-1:
+                    if len(baseline) > idx+1:
+                        x, y, angle = compute_start_and_angle(baseline, idx, data_augmentation=self.data_augmentation)
+                        x = x.to(self.device)
+                        y = y.to(self.device)
+                        angle = angle.to(self.device)
 
-                    sina = torch.sin(angle)
-                    cosa = torch.cos(angle)
-                else:
-                    print('ERROR! This message should not be reached!')
-                    break
+                        sina = torch.sin(angle)
+                        cosa = torch.cos(angle)
+                    else:
+                        print('ERROR! This message should not be reached!')
+                        break
 
-        return torch.cat([x_list.unsqueeze(0), y_list.unsqueeze(0)], dim=0).permute(1, 0), bl_end_list, bl_end_length_list, patches
+        return torch.cat([x_list.unsqueeze(0), y_list.unsqueeze(0)], dim=0).permute(1, 0), bl_end_list, \
+               bl_end_length_list, patches
