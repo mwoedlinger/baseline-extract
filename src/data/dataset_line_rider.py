@@ -62,9 +62,10 @@ class DatasetLineRider(Dataset):
         self.max_side = parameters['max_side']
         self.transforms = transforms.Compose([transforms.Resize((self.max_side, self.max_side),
                                                                 interpolation=Image.NEAREST),
+                                              #transforms.Grayscale(num_output_channels=3),
                                               transforms.ToTensor(),
-                                              transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                                   std=[0.229, 0.224, 0.225])
+                                              transforms.Normalize(mean=[0.7219, 0.6874, 0.6260],
+                                                                   std=[0.2174, 0.2115, 0.1989])
                                               ])
 
         self.max_bl_length = 1000
@@ -74,13 +75,11 @@ class DatasetLineRider(Dataset):
         return len(self.images)
 
     def __getitem__(self, idx: int):
-        # TODO: implement data augmentation: horizontal flip:
-        # Flip the entire input image horizontally. Also 'flip' the coordinates of the baselines => inverse the order
-        # (baselines should be read from left to right)
         image = Image.open(self.images[idx])
         parser = XMLParser(self.labels[idx])
         parser.scale(self.max_side)
         baselines = parser.get_baselines()
+        #TODO: add data augmentation: negative colors? also add segmentation!
 
         baselines = [[p.get_as_list() for p in bl] for bl in baselines]
         # bl_length is a list that contains the length of every baseline. This will be returned to make it

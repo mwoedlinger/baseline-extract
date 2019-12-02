@@ -1,0 +1,17 @@
+{
+  "line_rider": {
+    "weights": null,
+    "device": 1
+  },
+  "line_finder": {
+    "weights": null,
+    "device": 2,
+    "num_classes": 6,
+    "backbone": 50
+  },
+  "random_seed": 42,
+  "data": {
+    "input_folder": null,
+    "img_size": 1024
+  }
+}

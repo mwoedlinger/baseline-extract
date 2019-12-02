@@ -8,7 +8,7 @@ class GCN(nn.Module):
         super(GCN, self).__init__()
 
         self.num_classes = n_classes
-        self.num_int_channels = 15
+        self.num_int_channels = 12
 
         if resnet_depth == 101:
             resnet = models.resnext101_32x8d(pretrained=True)

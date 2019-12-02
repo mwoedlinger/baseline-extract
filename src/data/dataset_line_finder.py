@@ -22,8 +22,8 @@ class DatasetLineFinder(Dataset):
         self.patch_size = parameters['crop_size']
         self.transform_grayscale = transforms.Grayscale(num_output_channels=1)
         self.transform_to_pil = transforms.ToPILImage()
-        self.transform_normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                        std=[0.229, 0.224, 0.225])
+        self.transform_normalize = transforms.Normalize(mean=[0.7219, 0.6874, 0.6260],
+                                                        std=[0.2174, 0.2115, 0.1989])
         self.transform_resize = transforms.Resize((self.max_side, self.max_side), interpolation=Image.NEAREST)
         self.transform_to_tensor = transforms.ToTensor()
 

@@ -2,14 +2,25 @@ import numpy as np
 import cv2
 import torch
 from ..segmentation.gcn_model import GCN
+from ..utils.distances import get_smallest_distance, get_median_diff
+
 
 class LineDetector:
     """
     Loads the line rider model for inference.
     """
-    def __init__(self, line_rider_weights: str, line_finder_weights: str, device_lr: str, device_lf: str):
+    def __init__(self, config: dict):
+        line_rider_weights = config['line_rider']['weights']
+        line_finder_weights = config['line_finder']['weights']
+        device_lr = config['line_rider']['device']
+        device_lf = config['line_finder']['device']
+        num_classes = config['line_finder']['num_classes']
+        backbone = config['line_finder']['backbone']
+
         self.line_rider = self.load_line_finder_model(line_rider_weights, device_lr)
-        self.line_finder_seg = self.load_torch_model(line_finder_weights, device_lf)
+        self.line_finder_seg = self.load_torch_model(line_finder_weights, device_lf, num_classes, backbone)
+
+        # self.transforms
 
     def load_line_rider_model(self, weights, device):
         model = torch.load(weights, map_location=device)
@@ -18,8 +29,8 @@ class LineDetector:
 
         return model
 
-    def load_line_finder_model(self, weights, device):
-        seg_model = GCN(n_classes=5, resnet_depth=101)
+    def load_line_finder_model(self, weights, device, num_classes, backbone):
+        seg_model = GCN(n_classes=num_classes, resnet_depth=backbone)
         seg_model.load_state_dict(torch.load(weights, map_location=device))
         seg_model.to(device)
         seg_model.eval()
@@ -79,7 +90,31 @@ class LineDetector:
         image = image.unsqueeze(0)
         seg_out = self.line_finder_seg(image)[0][0]
 
+        image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
+
         start_points, end_points, angles, label_list = self.extract_start_points_and_angles(seg_out.cpu().numpy())
+
+        baselines = []
+        ep_label_list = end_points.keys()
+
+        for l in label_list:
+            sp = start_points[l]
+            angle = angles[l]
+
+            # Compute box size
+            box_size = int(get_smallest_distance(sp, start_points.values()))
+            box_size = max(10, min(48, box_size))
+            if box_size == 0:
+                box_size = min(10, max(32, get_median_diff(start_points) / 2.0))
+
+            if l in ep_label_list:
+                ep = end_points[l]
+
+                baseline, _, _, _ = self.model(img=image_seg, box_size=box_size, sp=sp, ep=ep, angle_0=angle)
+
+            baselines.append(baseline)
+
+        return baselines
 
 
 
