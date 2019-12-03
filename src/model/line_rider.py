@@ -261,6 +261,7 @@ class LineRider(nn.Module):
             img_patch = torch.nn.functional.grid_sample(img, agrid, mode='nearest', padding_mode='zeros')
             patches.append(img_patch)
 
+
             # out, hidden = self.rider_line(img_patch, hidden=hidden)
             out = self.rider_line(img_patch)
             if mode in ['baseline', 'sp']:

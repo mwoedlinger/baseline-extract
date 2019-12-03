@@ -1,17 +1,18 @@
 {
   "line_rider": {
-    "weights": null,
+    "weights": "trained_models/line_rider/line_rider_seg_2.pt",
     "device": 1
   },
   "line_finder": {
-    "weights": null,
-    "device": 2,
+    "weights": "trained_models/segmentation/GCN_1024_cBAD_resnext50.pt",
+    "device": 1,
     "num_classes": 6,
     "backbone": 50
   },
   "random_seed": 42,
+  "output_folder": "data/test_out",
   "data": {
-    "input_folder": null,
+    "input_folder": "data/cBAD-ICDAR2019/test",
     "img_size": 1024
   }
 }

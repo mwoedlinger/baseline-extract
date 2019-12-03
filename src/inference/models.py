@@ -12,20 +12,23 @@ class LineDetector:
     def __init__(self, config: dict):
         line_rider_weights = config['line_rider']['weights']
         line_finder_weights = config['line_finder']['weights']
-        device_lr = config['line_rider']['device']
-        device_lf = config['line_finder']['device']
+        self.device_lr = torch.device('cuda:' + str(config['line_rider']['device']) if torch.cuda.is_available() else 'cpu')
+        self.device_lf = torch.device('cuda:' + str(config['line_finder']['device']) if torch.cuda.is_available() else 'cpu')
         num_classes = config['line_finder']['num_classes']
         backbone = config['line_finder']['backbone']
 
-        self.line_rider = self.load_line_finder_model(line_rider_weights, device_lr)
-        self.line_finder_seg = self.load_torch_model(line_finder_weights, device_lf, num_classes, backbone)
+        print('## Load Line Rider:')
+        self.line_rider = self.load_line_rider_model(line_rider_weights, self.device_lr)
+        print('## Load Line Finder:')
+        self.line_finder_seg = self.load_line_finder_model(line_finder_weights, self.device_lf, num_classes, backbone)
+        print('## Loaded!')
 
-        # self.transforms
 
     def load_line_rider_model(self, weights, device):
         model = torch.load(weights, map_location=device)
         model.to(device)
         model.eval()
+        model.device = device
 
         return model
 
@@ -45,14 +48,16 @@ class LineDetector:
 
         return out
 
-    def extract_start_points_and_angles(self, segmentation: np.array) -> tuple:
+    def extract_start_points_and_angles(self, seg: np.array) -> tuple:
+        segmentation = np.transpose(seg[0], (1, 2, 0))
+
         probs_start_points = segmentation[:, :, 2]
         probs_end_points = segmentation[:, :, 3]
         probs_baselines = segmentation[:, :, 0]
 
         # Postprozessing parameters
         sigma = 0.3
-        threshold = 0.95
+        threshold = 0.99
         morph_close_size = 3
         erode_size = 3
 
@@ -87,30 +92,38 @@ class LineDetector:
         return sp_labels, ep_labels, angles, label_list
 
     def extract_baselines(self, image: torch.tensor):
-        image = image.unsqueeze(0)
-        seg_out = self.line_finder_seg(image)[0][0]
+        image = image.unsqueeze(0).to(self.device_lf)
+        seg_out = self.line_finder_seg(image)[0]
 
         image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
 
-        start_points, end_points, angles, label_list = self.extract_start_points_and_angles(seg_out.cpu().numpy())
+        start_points, end_points, angles, label_list = self.extract_start_points_and_angles(seg_out.cpu().detach().numpy())
+
+        sp_values = torch.tensor(list(start_points.values())).to(self.device_lr)
 
         baselines = []
         ep_label_list = end_points.keys()
 
         for l in label_list:
-            sp = start_points[l]
-            angle = angles[l]
+            sp = torch.tensor(start_points[l]).to(self.device_lr)
+            angle = torch.tensor(angles[l]).to(self.device_lr)
 
             # Compute box size
-            box_size = int(get_smallest_distance(sp, start_points.values()))
+            box_size = int(get_smallest_distance(sp, sp_values))
             box_size = max(10, min(48, box_size))
             if box_size == 0:
                 box_size = min(10, max(32, get_median_diff(start_points) / 2.0))
 
-            if l in ep_label_list:
-                ep = end_points[l]
+            box_size = torch.tensor(box_size).double()
 
-                baseline, _, _, _ = self.model(img=image_seg, box_size=box_size, sp=sp, ep=ep, angle_0=angle)
+            if l in ep_label_list:
+                ep = torch.tensor(end_points[l]).to(self.device_lr)
+
+                baseline, _, _, _ = self.line_rider(img=image_seg, box_size=box_size, sp=sp, angle_0=angle)
+
+                baseline[-1] = ep
+            else:
+                baseline, _, _, _ = self.line_rider(img=image_seg, box_size=box_size, sp=sp, angle_0=angle)
 
             baselines.append(baseline)
 
