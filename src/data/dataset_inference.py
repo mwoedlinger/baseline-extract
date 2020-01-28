@@ -22,10 +22,14 @@ class DatasetInference(Dataset):
 
     def __getitem__(self, idx: int):
         image = Image.open(self.images[idx])
+        width, height = image.size
+
         image = self.transforms(image)
 
         sample = {'image': image,
-                  'filename': self.images[idx]}
+                  'filename': self.images[idx],
+                  'width': width,
+                  'height': height}
 
         return sample
 
@@ -38,6 +42,7 @@ class DatasetInference(Dataset):
         for root, directories, filenames in os.walk(self.input_folder):
             if 'page' not in root:
                 image_list = [os.path.join(root, f) for f in filenames]
+        image_list.sort()
 
         return image_list
 

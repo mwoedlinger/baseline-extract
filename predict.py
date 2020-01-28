@@ -6,6 +6,7 @@ from src.inference.models import LineDetector
 from src.data.dataset_inference import DatasetInference
 from src.utils.utils import create_prediction_string
 
+
 def predict(config):
     detector = LineDetector(config)
     dataset = DatasetInference(config['data']['img_size'], config['data']['input_folder'])
@@ -18,13 +19,11 @@ def predict(config):
     for sample in tqdm.tqdm(dataset):
         img = sample['image']
         filename = sample['filename']
+        width = sample['width']
+        height = sample['height']
 
         baselines = detector.extract_baselines(img)
-        bl_string = create_prediction_string(baselines)
-
-        # print('filename: {}'.format(filename))
-        # print(bl_string)
-        # print('')
+        bl_string = create_prediction_string(baselines, width, height, config['data']['img_size'])
 
         text_name = os.path.basename(filename).split('.')[0]+'.txt'
         with open(os.path.join(output_folder, text_name), 'w') as txt_file:

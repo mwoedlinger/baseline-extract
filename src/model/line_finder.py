@@ -74,8 +74,8 @@ class LineFinder(nn.Module):
                     offset_tensor[b, 1, row, column] = patch_size / 2.0 + column * patch_size
 
                     out[b, -1, row, column] = self.sigmoid(out[b, -1, row, column])
-                    out[b, 0, row, column] = patch_size/2.0 * self.tanh(out[b, 0, row, column]) #TODO: comment
-                    out[b, 1, row, column] = patch_size/2.0 * self.tanh(out[b, 1, row, column]) #TODO: comment
+                    # out[b, 0, row, column] = patch_size/2.0 * self.tanh(out[b, 0, row, column]) #TODO: comment
+                    # out[b, 1, row, column] = patch_size/2.0 * self.tanh(out[b, 1, row, column]) #TODO: comment
 
         offset_tensor = offset_tensor.to(self.device)
 

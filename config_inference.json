@@ -1,6 +1,6 @@
 {
   "line_rider": {
-    "weights": "trained_models/line_rider/line_rider_seg_2.pt",
+    "weights": "trained_models/line_rider/line_rider_seg.pt",
     "device": 1
   },
   "line_finder": {

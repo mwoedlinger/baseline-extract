@@ -73,4 +73,4 @@ class GCN(nn.Module):
         #out = self.artifact_cleaner(out)
         out = self.sigmoid(out)
 
-        return out, fs3, fs2, fs1, gcfm1
+        return {'out': out, 'fs3': fs3, 'fs2': fs2, 'fs1': fs1, 'gcmf1': gcfm1}

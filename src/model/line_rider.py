@@ -21,28 +21,7 @@ class LineRider(nn.Module):
         self.data_augmentation = True
         self.input_size = input_size
 
-        # in: [N, 3, 32, 32] -> out: [N, 8]
-        self.model_line = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3, padding=2),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=3, padding=2),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Flatten(),
-            nn.Linear(in_features=64, out_features=8)
-        )
+        # # in: [N, 3, 32, 32] -> out: [N, 8]
         # self.model_line = nn.Sequential(
         #     nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
         #     nn.ReLU(),
@@ -51,36 +30,40 @@ class LineRider(nn.Module):
         #     nn.MaxPool2d(kernel_size=2),
         #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),
         #     nn.ReLU(),
-        #     nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=2),
+        #     nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, padding=2),
         #     nn.ReLU(),
         #     nn.MaxPool2d(kernel_size=2),
-        #     nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.MaxPool2d(kernel_size=2),
-        #     nn.Flatten(),
-        #     nn.Linear(in_features=256, out_features=8)
-        # )
-        # self.model_line = nn.Sequential(
-        #     nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.MaxPool2d(kernel_size=2),
-        #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),
-        #     nn.ReLU(),
         #     nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3),
         #     nn.ReLU(),
-        #     nn.MaxPool2d(kernel_size=2),
-        #     nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3),
-        #     nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3),
+        #     nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3),
         #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=2),
         #     nn.Flatten(),
-        #     nn.Linear(in_features=256, out_features=8)
+        #     nn.Linear(in_features=128, out_features=8)
         # )
+        # in: [N, 3, 64, 64] -> out: [N, 8]
+        self.model_line = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=2),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, padding=2),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Flatten(),
+            nn.Linear(in_features=512, out_features=8)
+        )
 
         # in: [N, 3, 32, 32] -> out: [N, 8]
         self.model_end = nn.Sequential(
@@ -91,9 +74,6 @@ class LineRider(nn.Module):
             nn.AvgPool2d(kernel_size=(1, 14)),
             nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(1, 2)),
             nn.ReLU(),
-            # nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, padding=2),
-            # nn.ReLU(),
-            # nn.AvgPool2d(kernel_size=8),
             nn.Flatten(),
             nn.Linear(in_features=5 * 64, out_features=8)
         )
@@ -154,9 +134,9 @@ class LineRider(nn.Module):
 
     def forward(self, img, box_size, sp=None, ep=None, angle_0=None, baseline=None, reset_idx: int = 4):
         """
-        If a baseline is provided the model assumes training mode which means every fourth baseline point it will
+        If a baseline is provided the model assumes training mode which means every reset_idx baseline point it will
         reset to the label given in 'baseline'. This also means that the computation graph is detached from
-        previous computations every fourth baseline point.
+        previous computations every reset_idx baseline point.
         :param img:         The image as a torch tensor
         :param box_size:    The window size in the original image
         :param baseline:    The baseline as torch tensor
@@ -278,11 +258,11 @@ class LineRider(nn.Module):
                 bl_end_length = out_end[1]
 
             norm = torch.sqrt(out[0]**2 + out[1]**2)
-            # sina_new = out[0]/norm
-            # cosa_new = out[1]/norm
+            sina_new = out[0]/norm
+            cosa_new = out[1]/norm
             angle_out = out[2]
-            sina_new = (out[0]/norm + torch.sin(angle_out))/2
-            cosa_new = (out[1]/norm + torch.cos(angle_out))/2
+            # sina_new = (out[0]/norm + torch.sin(angle_out))/2
+            # cosa_new = (out[1]/norm + torch.cos(angle_out))/2
 
             ################################### TODO: test if this works better:
             # x_out = out[0]
@@ -295,8 +275,8 @@ class LineRider(nn.Module):
             # angle = angle + (angle_out + torch.atan(y_out/x_out)) TODO: necessary?
             ###################################
 
-            # cos(a + b) = cos(a)*cos(b) - sin(a)*sin(b)
-            # sin(a + b) = sin(a)*cos(b) + cos(a)*sin(b)
+            # Reminder: cos(a + b) = cos(a)*cos(b) - sin(a)*sin(b)
+            # Reminder: sin(a + b) = sin(a)*cos(b) + cos(a)*sin(b)
             if mode == 'sp':
                 # if bl_end > 0.8 the network predicted the end of the baseline.
                 # The value of bl_end_length is then the quotient of box_size and the length of the final baseline segment.
@@ -349,7 +329,7 @@ class LineRider(nn.Module):
 
             sina = sina_new
             cosa = cosa_new
-            # angle += torch.atan(sina / cosa)
+            angle += torch.atan(sina / cosa)
             angle += (torch.atan(sina / cosa) + angle_out)/2
 
             if self.data_augmentation == True:

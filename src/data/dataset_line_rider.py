@@ -1,6 +1,7 @@
 import os
-from PIL import Image
+import PIL
 import torch
+import random
 from torch.utils.data import Dataset
 from torchvision import transforms
 from .xml_parser import XMLParser
@@ -61,7 +62,7 @@ class DatasetLineRider(Dataset):
         self.images, self.labels = self.list_files()
         self.max_side = parameters['max_side']
         self.transforms = transforms.Compose([transforms.Resize((self.max_side, self.max_side),
-                                                                interpolation=Image.NEAREST),
+                                                                interpolation=PIL.Image.NEAREST),
                                               #transforms.Grayscale(num_output_channels=3),
                                               transforms.ToTensor(),
                                               transforms.Normalize(mean=[0.7219, 0.6874, 0.6260],
@@ -71,11 +72,13 @@ class DatasetLineRider(Dataset):
         self.max_bl_length = 1000
         self.max_bl_no = 2500
 
+        random.seed(42)
+
     def __len__(self) -> int:
         return len(self.images)
 
     def __getitem__(self, idx: int):
-        image = Image.open(self.images[idx])
+        image = PIL.Image.open(self.images[idx])
         parser = XMLParser(self.labels[idx])
         parser.scale(self.max_side)
         baselines = parser.get_baselines()
@@ -90,8 +93,12 @@ class DatasetLineRider(Dataset):
         # Everything below that will be padded such that the baselines returned will be saved in a
         # (self.max_bl_no, self.max_bl_length, 2) tensor and bl_length will be stored in (self.max_bl_no) tensors.
         bl_lengths_padded = bl_lengths + [-1]*(self.max_bl_no - len(bl_lengths))
-        baselines_padded_linewise = [b + [[-1,-1]]*(self.max_bl_length-len(b)) for b in baselines]
+        baselines_padded_linewise = [b + [[-1, -1]]*(self.max_bl_length-len(b)) for b in baselines]
         baselines_padded = baselines_padded_linewise + [[[-1, -1]]*self.max_bl_length]*(self.max_bl_no - len(baselines_padded_linewise))
+
+        # # Apply random color invert:
+        # if random.randint(0, 1) > 0:
+        #     image = PIL.ImageOps.invert(image)
 
         sample = {'image': self.transforms(image),
                   'baselines': torch.tensor(baselines_padded),

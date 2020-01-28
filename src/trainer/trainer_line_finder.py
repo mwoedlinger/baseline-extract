@@ -23,30 +23,35 @@ class TrainerLineFinder:
 
         self.lr = config['lr']
         self.gpu = config['gpu']
-        self.segmentation_gpu = config['segmentation_gpu']
         self.batch_size = config['batch_size']
         self.epochs = config['epochs']
         self.eval_epoch = config['eval_epoch']
         self.parameters = config['data']
         self.max_side = config['data']['max_side']
         self.reset_idx = config['reset_idx_start']
-        self.segmentation_weights = config['segmentation_weights']
 
         self.device = torch.device('cuda:' + str(self.gpu) if torch.cuda.is_available() else 'cpu')
-        self.segmentation_device = torch.device('cuda:' + str(self.segmentation_gpu) if torch.cuda.is_available()
-                                                else 'cpu')
 
         self.model, self.criterion = self.get_model(weights)
 
         self.optimizer, self.scheduler = self.get_optimizer()
         self.dataloaders = self.get_dataloaders()
 
+        self.segmentation_weights = config['segmentation']['segmentation_weights']
+        if self.segmentation_weights is not None:
+            self.segmentation_gpu = config['segmentation']['segmentation_gpu']
+            self.segmentation_device = torch.device('cuda:' + str(self.segmentation_gpu) if torch.cuda.is_available()
+                                                    else 'cpu')
 
-        print('## Loading segmentation model')
-        self.seg_model = GCN(n_classes=4)
-        self.seg_model.load_state_dict(torch.load(self.segmentation_weights, map_location=self.segmentation_device))
-        self.seg_model.to(self.segmentation_device)
-        self.seg_model.eval()
+            print('## Loading segmentation model')
+            self.seg_model = GCN(n_classes=config['segmentation']['segmentation_classes'])
+            self.seg_model.load_state_dict(torch.load(self.segmentation_weights, map_location=self.segmentation_device))
+            self.seg_model.to(self.segmentation_device)
+            self.seg_model.eval()
+
+            self.segmentation = True
+        else:
+            self.segmentation = False
 
     def get_model(self, weights):
         """
@@ -73,7 +78,7 @@ class TrainerLineFinder:
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
 
         # Decay LR by a factor of 'gamma' every 'step_size' epochs
-        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)#30
+        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.9)#20, 0.5#30
 
         return [optimizer, exp_lr_scheduler]
 
@@ -123,11 +128,12 @@ class TrainerLineFinder:
             label = batch['label'].to(self.device)
             label_len = batch['label_len'].to(self.device)
 
-            with torch.no_grad():
-                seg_out = self.seg_model(image)[0]
-                seg_out.detach()
-            image = (image[:, 0:1, :, :] + image[:, 1:2, :, :] + image[:, 2:3, :, :])/3.0
-            image = torch.cat([image, seg_out[:, [0, 2], :, :]], dim=1).detach()
+            if self.segmentation:
+                with torch.no_grad():
+                    seg_out = self.seg_model(image)[0]
+                    seg_out.detach()
+                image = (image[:, 0:1, :, :] + image[:, 1:2, :, :] + image[:, 2:3, :, :])/3.0
+                image = torch.cat([image, seg_out[:, [0, 2], :, :]], dim=1).detach()
 
             steps += 1#image.size(0)
 
@@ -184,11 +190,12 @@ class TrainerLineFinder:
                 label = batch['label'].to(self.device)
                 label_len = batch['label_len'].to(self.device)
 
-                with torch.no_grad():
-                    seg_out = self.seg_model(image)[0]
-                    seg_out.detach()
-                image = (image[:, 0:1, :, :] + image[:, 1:2, :, :] + image[:, 2:3, :, :]) / 3.0
-                image = torch.cat([image, seg_out[:, [0, 2], :, :]], dim=1).detach()
+                if self.segmentation:
+                    with torch.no_grad():
+                        seg_out = self.seg_model(image)[0]
+                        seg_out.detach()
+                    image = (image[:, 0:1, :, :] + image[:, 1:2, :, :] + image[:, 2:3, :, :]) / 3.0
+                    image = torch.cat([image, seg_out[:, [0, 2], :, :]], dim=1).detach()
 
                 eval_steps += 1#image.size(0)
 

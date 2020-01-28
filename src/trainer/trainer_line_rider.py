@@ -4,6 +4,7 @@ import copy
 import random
 from tqdm import tqdm
 import torch
+from torchvision import models
 from torch.utils.tensorboard import SummaryWriter
 from ..data.dataset_line_rider import DatasetLineRider, prepare_data_for_loss
 from ..utils.normalize_baselines import normalize_baselines, compute_start_and_angle
@@ -27,31 +28,37 @@ class TrainerLineRider:
 
         self.lr = config['lr']
         self.gpu = config['gpu']
-        self.segmentation_gpu = config['segmentation_gpu']
+        self.with_seg = config['with_seg']
         self.batch_size = 1#config['batch_size']
         self.epochs = config['epochs']
         self.eval_epoch = config['eval_epoch']
         self.parameters = config['data']
         self.max_side = config['data']['max_side']
         self.reset_idx = config['reset_idx_start']
-        self.segmentation_weights = config['segmentation_weights']
 
         self.device = torch.device('cuda:' + str(self.gpu) if torch.cuda.is_available() else 'cpu')
-        self.segmentation_device = torch.device('cuda:' + str(self.segmentation_gpu) if torch.cuda.is_available()
-                                                else 'cpu')
-
         self.model, self.criterion_bl, self.criterion_end = self.get_model(weights)
 
         self.optimizer, self.scheduler = self.get_optimizer()
         self.dataloaders = self.get_dataloaders()
 
-        print('## Loading segmentation model')
-        self.seg_model = GCN(n_classes=6, resnet_depth=50)
-        self.seg_model.load_state_dict(torch.load(self.segmentation_weights, map_location=self.segmentation_device))
-        self.seg_model.to(self.segmentation_device)
-        self.seg_model.eval()
+        # If with_seg is set to True load the segmentation model
+        if self.with_seg:
+            print('## Loading segmentation model')
+            self.segmentation_gpu = config['segmentation_gpu']
+            self.segmentation_weights = config['segmentation_weights']
 
-        print('## Trainer settings:')
+            self.segmentation_device = torch.device('cuda:' + str(self.segmentation_gpu) if torch.cuda.is_available()
+                                                    else 'cpu')
+
+            self.seg_model = models.segmentation.deeplabv3_resnet50(num_classes=6)
+            self.seg_model = GCN(n_classes=6, resnet_depth=50) # TODO: check config file for model type
+            self.seg_model.load_state_dict(torch.load(self.segmentation_weights, map_location=self.segmentation_device))
+            self.seg_model.to(self.segmentation_device)
+            self.seg_model.eval()
+
+        print('\n## Trainer settings:')
+        print('exp name:    {}'.format(self.exp_name))
         print('gpu:         {}'.format(str(self.gpu)))
         print('side_length: {}'.format(str(self.max_side)))
         print('epochs:      {}\n'.format(str(self.epochs)))
@@ -70,8 +77,8 @@ class TrainerLineRider:
         model_ft.to(self.device)
         criterion_bl = torch.nn.MSELoss()
         # criterion_bl = torch.nn.L1Loss()
-        criterion_end = torch.nn.BCELoss()
         # criterion_bl = L12Loss()
+        criterion_end = torch.nn.BCELoss()
         self.criterion_length = torch.nn.MSELoss()
 
         return [model_ft, criterion_bl, criterion_end]
@@ -100,7 +107,7 @@ class TrainerLineRider:
         batch_size_dict = {'train': self.batch_size, 'eval': 1}
 
         image_datasets = {inf_type: DatasetLineRider(inf_type=inf_type,
-                                                    parameters=self.parameters)
+                                                     parameters=self.parameters)
                           for inf_type in ['train', 'eval']}
 
         dataloaders = {inf_type: torch.utils.data.DataLoader(image_datasets[inf_type],
@@ -125,11 +132,8 @@ class TrainerLineRider:
         self.model.train()
         self.model.data_augmentation = True
 
-        # if epoch % 1 == 0 and epoch > 0:
-        #     self.reset_idx += 1
-
-        tensorboard_img_steps = 299
-        reset_counter_steps = 399
+        tensorboard_img_steps = 499
+        reset_counter_steps = 499#299#399
 
         running_loss = 0
         running_bl_loss = 0
@@ -149,10 +153,13 @@ class TrainerLineRider:
             baselines = batch['baselines'][0]
             bl_lengths = batch['bl_lengths'][0]
 
-            with torch.no_grad():
-                seg_out = self.seg_model(image)[0]
-                seg_out.detach()
-            image = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
+            # if self.with_seg is true the model performs a segmentation and uses the segmentation information
+            # for computing the baselines.
+            if self.with_seg:
+                with torch.no_grad():
+                    seg_out = self.seg_model(image)['out']
+                    seg_out.detach()
+                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
 
             steps += image.size(0)
 
@@ -167,16 +174,16 @@ class TrainerLineRider:
                 pred_list = []
 
             with torch.set_grad_enabled(True):
+                loss = 0
                 for n in range(number_of_baselines):
+
                     # zero the parameter gradients
                     self.optimizer.zero_grad()
 
                     # Compute box size
                     box_size = int(get_smallest_distance(start_points[n], start_points))
-                    box_size = max(10, min(48, box_size)) + random.randint(-3,10)
+                    box_size = max(10, min(48, box_size)) + random.randint(-3, 10)
                     # +5: Larger box sizes make are more difficult => regularization
-                    if box_size == 0:
-                        box_size = min(10, max(32, get_median_diff(start_points)/2.0))
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]
@@ -198,9 +205,13 @@ class TrainerLineRider:
                     # The loss is a combination of the regression loss for prediction of the baseline coordinates,
                     # the length of the last baseline segment and the classification loss for the prediction of
                     # the baseline end.
-                    loss = self.criterion_bl(l_pred, l_label) \
-                           + self.criterion_end(l_bl_end_pred, l_bl_end_label) \
-                           + self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
+                    loss += self.criterion_bl(l_pred, l_label)
+                    loss_end = self.criterion_end(l_bl_end_pred, l_bl_end_label) \
+                               + self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
+
+                    # backward + optimize end loss
+                    loss_end.backward()
+                    self.optimizer.step()
 
                     running_loss += loss
                     running_bl_loss += self.criterion_bl(l_pred, l_label)
@@ -209,6 +220,7 @@ class TrainerLineRider:
 
                     running_counter += 1
 
+                if loss > 0:
                     # backward + optimize
                     loss.backward()
                     self.optimizer.step()
@@ -254,10 +266,14 @@ class TrainerLineRider:
             baselines = batch['baselines'][0]
             bl_lengths = batch['bl_lengths'][0]
 
-            with torch.no_grad():
-                seg_out = self.seg_model(image)[0]
-                seg_out.detach()
-            image = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
+            # if self.with_seg is true the model performs a segmentation and uses the segmentation information
+            # for computing the baselines.
+
+            if self.with_seg:
+                with torch.no_grad():
+                    seg_out = self.seg_model(image)['out']
+                    seg_out.detach()
+                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
 
             eval_steps += image.size(0)
 
@@ -277,8 +293,6 @@ class TrainerLineRider:
                     # Compute box size
                     box_size = int(get_smallest_distance(start_points[n], start_points))
                     box_size = max(10, min(48, box_size))
-                    if box_size == 0:
-                        box_size = min(10, max(32, get_median_diff(start_points)/2.0))
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]
@@ -343,7 +357,6 @@ class TrainerLineRider:
         Prints current stats to the console.
         :return: The trained model
         """
-        print('## Start training:')
 
         since = time.time()
         writer = SummaryWriter(log_dir=os.path.join(self.log_dir, self.exp_name))
@@ -374,6 +387,7 @@ class TrainerLineRider:
                     best_mse = loss
                     best_model_wts = copy.deepcopy(self.model.state_dict())
                     torch.save(self.model, os.path.join(self.output_folder, 'line_rider', self.exp_name + '.pt'))
+                    print('## New best! Model saved!')
 
 
         time_elapsed = time.time() - since
