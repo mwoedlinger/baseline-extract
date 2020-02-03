@@ -5,6 +5,7 @@ import math
 from torchvision import models
 from ..segmentation.gcn_model import GCN
 from ..utils.distances import get_smallest_distance, get_median_diff
+from ..utils.utils import load_class_dict
 
 
 def is_in_box(point, left, top, width, height):
@@ -57,15 +58,19 @@ class LineDetector:
         line_finder_weights = config['line_finder']['weights']
         self.device_lr = torch.device('cuda:' + str(config['line_rider']['device']) if torch.cuda.is_available() else 'cpu')
         self.device_lf = torch.device('cuda:' + str(config['line_finder']['device']) if torch.cuda.is_available() else 'cpu')
-        num_classes = config['line_finder']['num_classes']
-        backbone = config['line_finder']['backbone']
+        self.classes, self.colors, self.class_dict = load_class_dict(config['line_finder']['class_file'])
+        self.model = config['line_finder']['model']
+        self.backbone = config['line_finder']['backbone']
+        self.num_classes = len(self.classes)
+        self.class_idx = {self.classes[idx]: idx for idx in range(0, self.num_classes)}
+        self.backbone = config['line_finder']['backbone']
+        self.auto_generate_start_points = config['line_finder']['auto_generate_start_points']
 
         print('## Load Line Rider:')
         self.line_rider = self.load_line_rider_model(line_rider_weights, self.device_lr)
         print('## Load Line Finder:')
-        self.line_finder_seg = self.load_line_finder_model(line_finder_weights, self.device_lf, num_classes, backbone)
+        self.line_finder_seg = self.load_line_finder_model(line_finder_weights, self.device_lf, )
         print('## Loaded!')
-
 
     def load_line_rider_model(self, weights, device):
         model = torch.load(weights, map_location=device)
@@ -75,15 +80,18 @@ class LineDetector:
 
         return model
 
-    def load_line_finder_model(self, weights, device, num_classes, backbone):
-        seg_model = models.segmentation.deeplabv3_resnet50(num_classes=6)
-        # seg_model = GCN(n_classes=num_classes, resnet_depth=backbone)
+    def load_line_finder_model(self, weights, device):
+        if self.model == 'GCN':
+            seg_model = GCN(n_classes=self.num_classes, resnet_depth=self.backbone)
+        elif self.model == 'DeepLabV3':
+            seg_model = models.segmentation.deeplabv3_resnet50(num_classes=self.num_classes)
         seg_model.load_state_dict(torch.load(weights, map_location=device))
         seg_model.to(device)
         seg_model.eval()
 
         return seg_model
 
+    @staticmethod
     def segmentation_postprocessing(self, array: np.array, sigma, threshold, morph_close_size, erode_size):
         out = cv2.GaussianBlur(array, (int(3 * sigma) * 2 + 1, int(3 * sigma) * 2 + 1), sigma)
         out = (out > threshold) * 1.0
@@ -95,10 +103,10 @@ class LineDetector:
     def extract_start_points_and_angles(self, seg: np.array) -> tuple:
         segmentation = np.transpose(seg[0], (1, 2, 0))
 
-        probs_start_points = segmentation[:, :, 2]#3
-        probs_end_points = segmentation[:, :, 3]#4
-        probs_baselines = segmentation[:, :, 0]
-        probs_border = segmentation[:, :, 1]#1 eigentlich border, nicht text
+        probs_start_points = segmentation[:, :, self.class_idx['start_points']]
+        probs_end_points = segmentation[:, :, self.class_idx['end_points']]
+        probs_baselines = segmentation[:, :, self.class_idx['baselines']]
+        probs_border = segmentation[:, :, self.class_idx['baseline_border']]
 
         # Postprozessing parameters
         sigma = 0.3
@@ -144,86 +152,88 @@ class LineDetector:
 
         bl_out_truth = contains_start_point(start_points, bl_stats)
 
-        new_sp = []
-        new_angles = []
+        if self.auto_generate_start_points:
+            # Generate new start points where the prediction faled
+            new_sp = []
+            new_angles = []
 
-        for n, bl_s in enumerate(bl_stats):
-            if not bl_out_truth[n]:
+            for n, bl_s in enumerate(bl_stats):
+                if not bl_out_truth[n]:
 
-                left = bl_s[0]
-                top = bl_s[1]
-                width = bl_s[2]
-                height = bl_s[3]
-                area = bl_s[4]
+                    left = bl_s[0]
+                    top = bl_s[1]
+                    width = bl_s[2]
+                    height = bl_s[3]
+                    area = bl_s[4]
 
-                if area < 3000 * self.config['data']['img_size'] / 1024:
-                    continue
+                    if area < 3000 * self.config['data']['img_size'] / 1024:
+                        continue
 
-                if width > height:
-                    for y in range(top, top + height):
-                        if bl_labels[y, left + 1] == n:
-                            new_sp.append(np.array([left, y], dtype=np.float64))
-                            new_angles.append(0.0)
-                            break
-                else:
-                    y_direction = 0
-
-                    for x in range(left, left + width):
-                        if bl_labels[top + 10, x] == n:
-                            y_direction = -1
-                            break
-                        elif border_labels[top + 10, x] != 0:
-                            y_direction = 1
-                            break
-
-                    if y_direction < 0:  # from bottom up
-                        for x in range(left, left + width):
-                            if bl_labels[top + height - 1, x] == n:
-                                new_sp.append(np.array([x, top + height - 1], dtype=np.float64))
-                                new_angles.append(math.pi / 2)
+                    if width > height:
+                        for y in range(top, top + height):
+                            if bl_labels[y, left + 1] == n:
+                                new_sp.append(np.array([left, y], dtype=np.float64))
+                                new_angles.append(0.0)
                                 break
-                    elif y_direction > 0:  # from up to down
+                    else:
+                        y_direction = 0
+
                         for x in range(left, left + width):
-                            if bl_labels[top + 1, x] == n:
-                                new_sp.append(np.array([x, top + 1], dtype=np.float64))
-                                new_angles.append(-math.pi / 2)
+                            if bl_labels[top + 10, x] == n:
+                                y_direction = -1
+                                break
+                            elif border_labels[top + 10, x] != 0:
+                                y_direction = 1
                                 break
 
-        sp_buff = []
-        angle_buff = []
+                        if y_direction < 0:  # from bottom up
+                            for x in range(left, left + width):
+                                if bl_labels[top + height - 1, x] == n:
+                                    new_sp.append(np.array([x, top + height - 1], dtype=np.float64))
+                                    new_angles.append(math.pi / 2)
+                                    break
+                        elif y_direction > 0:  # from up to down
+                            for x in range(left, left + width):
+                                if bl_labels[top + 1, x] == n:
+                                    new_sp.append(np.array([x, top + 1], dtype=np.float64))
+                                    new_angles.append(-math.pi / 2)
+                                    break
 
-        for n in range(len(new_sp)):
-            x = new_sp[n][0]
-            y = new_sp[n][1]
+            sp_buff = []
+            angle_buff = []
 
-            d_min = 1e10
-            for l in label_list:
-                d = np.sqrt(pow(x - sp_labels[l][0], 2) + pow(y - sp_labels[l][1], 2))
-                if d > 0:
-                    d_min = min(d_min, d)
-            if d_min > 15:
-                sp_buff.append(new_sp[n])
-                angle_buff.append(new_angles[n])
+            for n in range(len(new_sp)):
+                x = new_sp[n][0]
+                y = new_sp[n][1]
 
-        new_sp = sp_buff
-        new_angles = angle_buff
+                d_min = 1e10
+                for l in label_list:
+                    d = np.sqrt(pow(x - sp_labels[l][0], 2) + pow(y - sp_labels[l][1], 2))
+                    if d > 0:
+                        d_min = min(d_min, d)
+                if d_min > 15:
+                    sp_buff.append(new_sp[n])
+                    angle_buff.append(new_angles[n])
 
-        if label_list:
-            m = max(label_list)
-        else:
-            m = 0
+            new_sp = sp_buff
+            new_angles = angle_buff
 
-        new_sp_dict = {l + m + 1: new_sp[l] for l in range(0, len(new_sp))}
-        new_angle_dict = {l + m + 1: new_angles[l] for l in range(0, len(new_angles))}
+            if label_list:
+                m = max(label_list)
+            else:
+                m = 0
 
-        sp_labels.update(new_sp_dict)
-        angles.update(new_angle_dict)
+            new_sp_dict = {l + m + 1: new_sp[l] for l in range(0, len(new_sp))}
+            new_angle_dict = {l + m + 1: new_angles[l] for l in range(0, len(new_angles))}
+
+            sp_labels.update(new_sp_dict)
+            angles.update(new_angle_dict)
 
         return sp_labels, ep_labels, angles, label_list
 
     def extract_baselines(self, image: torch.tensor):
         image = image.unsqueeze(0).to(self.device_lf)
-        seg_out = self.line_finder_seg(image)['out']#[0] TODO: make dependent on config file
+        seg_out = self.line_finder_seg(image)['out']
 
         # image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
         image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, 0:1, :, :], seg_out[:, 1:2, :, :] + seg_out[:, 2:3, :, :]], dim=1).detach()

@@ -18,52 +18,52 @@ class LineRider(nn.Module):
     def __init__(self, device: str, input_size: int = 32):
         super(LineRider, self).__init__()
         self.device = device
-        self.data_augmentation = True
+        self.data_augmentation = True#False #True #TODO: CHANGE BACK!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         self.input_size = input_size
 
-        # # in: [N, 3, 32, 32] -> out: [N, 8]
-        # self.model_line = nn.Sequential(
-        #     nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, padding=2),
-        #     nn.ReLU(),
-        #     nn.MaxPool2d(kernel_size=2),
-        #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, padding=2),
-        #     nn.ReLU(),
-        #     nn.MaxPool2d(kernel_size=2),
-        #     nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.MaxPool2d(kernel_size=2),
-        #     nn.Flatten(),
-        #     nn.Linear(in_features=128, out_features=8)
-        # )
-        # in: [N, 3, 64, 64] -> out: [N, 8]
+        # in: [N, 3, 32, 32] -> out: [N, 8]
         self.model_line = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3),
+            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, padding=2),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=2),
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, padding=2),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3),
+            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3),
             nn.ReLU(),
-            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, padding=2),
+            nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3),
+            nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
             nn.Flatten(),
-            nn.Linear(in_features=512, out_features=8)
+            nn.Linear(in_features=128, out_features=8)
         )
+        # # in: [N, 3, 64, 64] -> out: [N, 8]
+        # self.model_line = nn.Sequential(
+        #     nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=2),
+        #     nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=2),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=2),
+        #     nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, padding=2),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=2),
+        #     nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=2),
+        #     nn.Flatten(),
+        #     nn.Linear(in_features=512, out_features=8)
+        # )
 
         # in: [N, 3, 32, 32] -> out: [N, 8]
         self.model_end = nn.Sequential(
@@ -222,7 +222,7 @@ class LineRider(nn.Module):
             # o Move the top left corner with - (1,1)
             # o Move to specified point with + (x_scaled, y_scaled)
             # o move such that the start point is in the middle of the right border with
-            #   + (cos(angle) * w_box, -sin(angle) * w_box) + (0, -h_box/4
+            #   + (cos(angle) * w_box, -sin(angle) * w_box) + (0, -h_box/4)
             # // This assumes that the image is squared, otherwise the hypotenuse is not exactly w_box/2
             x_s = -1.0 + x_scaled + w_box / 2 * torch.cos(alpha)
             y_s = -1.0 + y_scaled - w_box / 2 * torch.sin(alpha)# - h_box/4 #TODO: leave or comment out?
@@ -329,7 +329,7 @@ class LineRider(nn.Module):
 
             sina = sina_new
             cosa = cosa_new
-            angle += torch.atan(sina / cosa)
+            # angle += torch.atan(sina / cosa)
             angle += (torch.atan(sina / cosa) + angle_out)/2
 
             if self.data_augmentation == True:

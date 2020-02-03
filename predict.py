@@ -4,8 +4,24 @@ import tqdm
 import os
 from src.inference.models import LineDetector
 from src.data.dataset_inference import DatasetInference
-from src.utils.utils import create_prediction_string
+from src.utils.utils import create_prediction_string, load_class_dict
 
+def create_lst_files(gt_folder = os.path.join('data', 'evaluation_java_app', 'gt'),
+                     pred_folder = os.path.join('data', 'pred')):
+    folders = [gt_folder, pred_folder]
+    for folder in folders:
+        file_list = []
+
+        for root, _, files in os.walk(folder):
+            file_list += [os.path.join(root, f) for f in files]
+
+        print('Found {} files in {} folder.'.format(len(file_list), folder))
+
+        text_string = '\n'.join(file_list)
+        filename = os.path.join('data', os.path.basename(folder) + '.lst')
+        with open(filename, 'w') as txt_file:
+            txt_file.writelines(text_string)
+            print('Created {}'.format(filename))
 
 def predict(config):
     detector = LineDetector(config)
@@ -28,6 +44,9 @@ def predict(config):
         text_name = os.path.basename(filename).split('.')[0]+'.txt'
         with open(os.path.join(output_folder, text_name), 'w') as txt_file:
             txt_file.writelines(bl_string)
+
+    print('##Create lst files.')
+    create_lst_files(pred_folder=output_folder)
 
 
 if __name__ == '__main__':

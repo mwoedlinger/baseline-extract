@@ -1,11 +1,11 @@
 {
-  "exp_name": "new_year",
+  "exp_name": "v1_with_data_augmentation", #todo - train
   "log_dir": "tensorboard",
   "output_folder": "trained_models",
   "gpu": 3,
   "with_seg": false,
-  "segmentation_gpu": 3,
-  "segmentation_weights": "trained_models/segmentation/DeepLabV3_1024_cBAD_resnet50_new_year.pt",
+  "segmentation_gpu": null,
+  "segmentation_weights": null,
   "lr": 4e-4,
   "batch_size": 1,
   "epochs": 8,

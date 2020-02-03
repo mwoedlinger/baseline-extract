@@ -4,13 +4,15 @@
     "device": 1
   },
   "line_finder": {
+    "auto_generate_start_points": true,
     "weights": "trained_models/segmentation/GCN_1024_cBAD_resnext50.pt",
     "device": 1,
-    "num_classes": 6,
+    "class_file": "trained_models/segmentation/classes.txt",
+    "model": "GCN",
     "backbone": 50
   },
   "random_seed": 42,
-  "output_folder": "data/test_out",
+  "output_folder": "data/pred",
   "data": {
     "input_folder": "data/cBAD-ICDAR2019/test",
     "img_size": 1024

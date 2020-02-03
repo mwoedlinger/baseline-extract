@@ -113,7 +113,7 @@ class TrainerLineRider:
         dataloaders = {inf_type: torch.utils.data.DataLoader(image_datasets[inf_type],
                                                              batch_size=batch_size_dict[inf_type],
                                                              shuffle=shuffle[inf_type],
-                                                             num_workers=4)
+                                                             num_workers=1)
                        for inf_type in ['train', 'eval']}
 
         return dataloaders
@@ -130,7 +130,7 @@ class TrainerLineRider:
         #       x) Implement data augmentation: vary the baseline a little bit
         #       o) Test if it is better to compute the loss for the whole document instead of single baselines.
         self.model.train()
-        self.model.data_augmentation = True
+        self.model.data_augmentation = True#False #True #TODO: CHANGE BACK !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
         tensorboard_img_steps = 499
         reset_counter_steps = 499#299#399
@@ -142,7 +142,7 @@ class TrainerLineRider:
         running_counter = 0
 
         # Iterate over data.
-        for batch in tqdm(self.dataloaders['train']):
+        for batch in tqdm(self.dataloaders['train'], dynamic_ncols=True):
 
             if steps % reset_counter_steps == reset_counter_steps-1:
                 if self.reset_idx < 8:
@@ -261,7 +261,7 @@ class TrainerLineRider:
         running_counter = 0
 
         # Iterate over data.
-        for batch in tqdm(self.dataloaders['eval']):
+        for batch in tqdm(self.dataloaders['eval'], dynamic_ncols=True):
             image = batch['image'].to(self.device)
             baselines = batch['baselines'][0]
             bl_lengths = batch['bl_lengths'][0]
