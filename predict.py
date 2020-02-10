@@ -25,7 +25,9 @@ def create_lst_files(gt_folder = os.path.join('data', 'evaluation_java_app', 'gt
 
 def predict(config):
     detector = LineDetector(config)
-    dataset = DatasetInference(config['data']['img_size'], config['data']['input_folder'])
+    dataset = DatasetInference(config['data']['img_size'],
+                               config['data']['input_folder'],
+                               get_GT_start_points=config['line_finder']['use_GT_sp_and_angles'])
 
     output_folder = config['output_folder']
     if not os.path.isdir(os.path.join(output_folder)):
@@ -38,14 +40,19 @@ def predict(config):
         width = sample['width']
         height = sample['height']
 
-        baselines = detector.extract_baselines(img)
+        if config['line_finder']['use_GT_sp_and_angles']:
+            sp = sample['start_points']
+            angles = sample['angles']
+            baselines = detector.extract_baselines(img, sp, angles)
+        else:
+            baselines = detector.extract_baselines(img)
         bl_string = create_prediction_string(baselines, width, height, config['data']['img_size'])
 
         text_name = os.path.basename(filename).split('.')[0]+'.txt'
         with open(os.path.join(output_folder, text_name), 'w') as txt_file:
             txt_file.writelines(bl_string)
 
-    print('##Create lst files.')
+    print('## Create lst files.')
     create_lst_files(pred_folder=output_folder)
 
 

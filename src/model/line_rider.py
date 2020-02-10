@@ -18,65 +18,82 @@ class LineRider(nn.Module):
     def __init__(self, device: str, input_size: int = 32):
         super(LineRider, self).__init__()
         self.device = device
-        self.data_augmentation = True#False #True #TODO: CHANGE BACK!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        self.data_augmentation = True
         self.input_size = input_size
 
-        # in: [N, 3, 32, 32] -> out: [N, 8]
-        self.model_line = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, padding=2),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, padding=2),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Flatten(),
-            nn.Linear(in_features=128, out_features=8)
-        )
-        # # in: [N, 3, 64, 64] -> out: [N, 8]
-        # self.model_line = nn.Sequential(
-        #     nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.MaxPool2d(kernel_size=2),
-        #     nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=2),
-        #     nn.ReLU(),
-        #     nn.MaxPool2d(kernel_size=2),
-        #     nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, padding=2),
-        #     nn.ReLU(),
-        #     nn.MaxPool2d(kernel_size=2),
-        #     nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3),
-        #     nn.ReLU(),
-        #     nn.MaxPool2d(kernel_size=2),
-        #     nn.Flatten(),
-        #     nn.Linear(in_features=512, out_features=8)
-        # )
+        if input_size == 32:
+            # in: [N, 3, 32, 32] -> out: [N, 8]
+            self.model_line = nn.Sequential(
+                nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
+                nn.ReLU(),
+                nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, padding=2),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=2),
+                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),
+                nn.ReLU(),
+                nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, padding=2),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=2),
+                nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3),
+                nn.ReLU(),
+                nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3),
+                nn.ReLU(),
+                nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=2),
+                nn.Flatten(),
+                nn.Linear(in_features=128, out_features=8)
+            )
 
-        # in: [N, 3, 32, 32] -> out: [N, 8]
-        self.model_end = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=(5, 3), stride=(2, 1)),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(5, 3), stride=(2, 1)),
-            nn.ReLU(),
-            nn.AvgPool2d(kernel_size=(1, 14)),
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(1, 2)),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(in_features=5 * 64, out_features=8)
-        )
+            # in: [N, 3, 32, 32] -> out: [N, 8]
+            self.model_end = nn.Sequential(
+                nn.Conv2d(in_channels=3, out_channels=32, kernel_size=(5, 3), stride=(2, 1)),
+                nn.ReLU(),
+                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(5, 3), stride=(2, 1)),
+                nn.ReLU(),
+                nn.AvgPool2d(kernel_size=(1, 14)),
+                nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(1, 2)),
+                nn.ReLU(),
+                nn.Flatten(),
+                nn.Linear(in_features=5 * 64, out_features=2)
+            )
+        elif input_size == 60:
+            # in: [N, 3, 60, 60] -> out: [N, 8]
+            self.model_line = nn.Sequential(
+                nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=2),
+                nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=2),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=2),
+                nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3),
+                nn.ReLU(),
+                nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, padding=2),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=2),
+                nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3),
+                nn.ReLU(),
+                nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3),
+                nn.ReLU(),
+                nn.MaxPool2d(kernel_size=2),
+                nn.Flatten(),
+                nn.Linear(in_features=512, out_features=2)
+            )
+
+            # in: [N, 3, 60, 60] -> out: [N, 8]
+            self.model_end = nn.Sequential(
+                nn.Conv2d(in_channels=3, out_channels=32, kernel_size=(5, 3), stride=(2, 1)),
+                nn.ReLU(),
+                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(5, 3), stride=(2, 1)),
+                nn.ReLU(),
+                nn.AvgPool2d(kernel_size=(2, 14)),
+                nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(2, 4)),
+                nn.ReLU(),
+                nn.Flatten(),
+                nn.Linear(in_features=5 * 64, out_features=2)
+            )
+
+
         # self.model_end = nn.Sequential(
         #     nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3),
         #     nn.ReLU(),
@@ -92,10 +109,8 @@ class LineRider(nn.Module):
         #     nn.Linear(in_features=256, out_features=8)
         # )
 
-        self.lin_out = nn.Linear(in_features=8, out_features=3)
+        self.lin_out = nn.Linear(in_features=8, out_features=2)
         self.lin_out_end = nn.Linear(in_features=8, out_features=2)
-
-
 
     def rider_line(self, x):
         """
@@ -106,14 +121,14 @@ class LineRider(nn.Module):
         :param x:       Input
         :return:        A tuple containing the output and the hidden state both as a torch tensor
         """
-        cnn_out = self.model_line(x)
-        out = self.lin_out(cnn_out)
+        out = self.model_line(x)
+        # out = self.lin_out(cnn_out)
 
         sina = nn.Tanh()(out[:, 0])
         cosa = nn.Tanh()(out[:, 1])
-        angle = nn.Tanh()(out[:, 2])*math.pi/2
+        # angle = nn.Tanh()(out[:, 2])*math.pi/2
 
-        return torch.cat([sina, cosa, angle], dim=0)
+        return torch.cat([sina, cosa], dim=0)
 
     def rider_end(self, x):
         """
@@ -124,8 +139,8 @@ class LineRider(nn.Module):
         :param x:       Input
         :return:        A tuple containing the output and the hidden state both as a torch tensor
         """
-        cnn_out = self.model_end(x)
-        out = self.lin_out_end(cnn_out)
+        out = self.model_end(x)
+        # out = self.lin_out_end(cnn_out)
 
         bl_end = nn.Sigmoid()(out[:, 0])
         bl_end_length = nn.Sigmoid()(out[:, 1])
@@ -260,7 +275,7 @@ class LineRider(nn.Module):
             norm = torch.sqrt(out[0]**2 + out[1]**2)
             sina_new = out[0]/norm
             cosa_new = out[1]/norm
-            angle_out = out[2]
+            #angle_out = out[2]
             # sina_new = (out[0]/norm + torch.sin(angle_out))/2
             # cosa_new = (out[1]/norm + torch.cos(angle_out))/2
 
@@ -329,8 +344,8 @@ class LineRider(nn.Module):
 
             sina = sina_new
             cosa = cosa_new
-            # angle += torch.atan(sina / cosa)
-            angle += (torch.atan(sina / cosa) + angle_out)/2
+            angle += torch.atan(sina / cosa)
+            # angle += (torch.atan(sina / cosa) + angle_out)/2
 
             if self.data_augmentation == True:
                 x_range = max(2, int(torch.sin(angle) * box_size/6))

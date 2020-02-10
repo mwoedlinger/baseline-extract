@@ -13,6 +13,7 @@ from ..model.line_rider import LineRider
 from ..model.loss import L12Loss
 from ..segmentation.gcn_model import GCN
 from ..utils.distances import get_median_diff, d2, get_smallest_distance
+from ..utils.utils import get_lr, load_class_dict
 
 
 class TrainerLineRider:
@@ -45,14 +46,16 @@ class TrainerLineRider:
         # If with_seg is set to True load the segmentation model
         if self.with_seg:
             print('## Loading segmentation model')
+            self.classes, _, _ = load_class_dict(config['segmentation_class_file'])
+            self.num_classes = len(self.classes)
             self.segmentation_gpu = config['segmentation_gpu']
             self.segmentation_weights = config['segmentation_weights']
 
             self.segmentation_device = torch.device('cuda:' + str(self.segmentation_gpu) if torch.cuda.is_available()
                                                     else 'cpu')
 
-            self.seg_model = models.segmentation.deeplabv3_resnet50(num_classes=6)
-            self.seg_model = GCN(n_classes=6, resnet_depth=50) # TODO: check config file for model type
+            # self.seg_model = models.segmentation.deeplabv3_resnet50(num_classes=self.num_classes)
+            self.seg_model = GCN(n_classes=self.num_classes, resnet_depth=50) # TODO: check config file for model type
             self.seg_model.load_state_dict(torch.load(self.segmentation_weights, map_location=self.segmentation_device))
             self.seg_model.to(self.segmentation_device)
             self.seg_model.eval()
@@ -92,7 +95,7 @@ class TrainerLineRider:
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
 
         # Decay LR by a factor of 'gamma' every 'step_size' epochs
-        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)#0.8
+        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.8)#0.8
 
         return [optimizer, exp_lr_scheduler]
 
@@ -130,10 +133,13 @@ class TrainerLineRider:
         #       x) Implement data augmentation: vary the baseline a little bit
         #       o) Test if it is better to compute the loss for the whole document instead of single baselines.
         self.model.train()
-        self.model.data_augmentation = True#False #True #TODO: CHANGE BACK !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        self.model.data_augmentation = True
 
-        tensorboard_img_steps = 499
-        reset_counter_steps = 499#299#399
+        # TODO: DELETE:
+        print('LR: {}'.format(get_lr(self.optimizer)))
+
+        tensorboard_img_steps = 399
+        reset_counter_steps = 399#499#399
 
         running_loss = 0
         running_bl_loss = 0
@@ -148,7 +154,6 @@ class TrainerLineRider:
                 if self.reset_idx < 8:
                     self.reset_idx += 1
 
-
             image = batch['image'].to(self.device)
             baselines = batch['baselines'][0]
             bl_lengths = batch['bl_lengths'][0]
@@ -159,9 +164,9 @@ class TrainerLineRider:
                 with torch.no_grad():
                     seg_out = self.seg_model(image)['out']
                     seg_out.detach()
-                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
+                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('sp_ep_border'), self.classes.index('baselines')], :, :]], dim=1).detach()
 
-            steps += image.size(0)
+            steps += 1
 
             # Compute the number of baselines. The baselines are padded with [-1] and [-1,-1].
             # number_of_baselines is the real number of baselines not counting the padding and bl_lengths[idx]
@@ -240,6 +245,9 @@ class TrainerLineRider:
         writer.add_scalar(tag='bl_loss/train', scalar_value=bl_loss, global_step=steps)
         writer.add_scalar(tag='end_loss/train', scalar_value=end_loss, global_step=steps)
         writer.add_scalar(tag='length_loss/train', scalar_value=length_loss, global_step=steps)
+        writer.add_scalar(tag='lr', scalar_value=get_lr(self.optimizer), global_step=steps)
+
+        self.scheduler.step()
 
         return loss, steps
 
@@ -273,7 +281,7 @@ class TrainerLineRider:
                 with torch.no_grad():
                     seg_out = self.seg_model(image)['out']
                     seg_out.detach()
-                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
+                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('sp_ep_border'), self.classes.index('baselines')], :, :]], dim=1).detach()
 
             eval_steps += image.size(0)
 
@@ -318,7 +326,7 @@ class TrainerLineRider:
                         prepare_data_for_loss(bl_n, c_list, bl_end_list, bl_n_end_length,
                                               bl_end_length_list, box_size, self.device)
 
-                    # The loss is a combination of the regression loss for prediction of the baselinecoordinates,
+                    # The loss is a combination of the regression loss for prediction of the baseline coordinates,
                     # the length of the last baseline segment and the classification loss for the prediction of
                     # the baseline end.
                     loss = self.criterion_bl(l_pred, l_label) \
@@ -378,7 +386,7 @@ class TrainerLineRider:
             writer.add_scalar(tag='mse/train', scalar_value=loss,
                               global_step=steps)
 
-            if epoch > 1 and epoch % self.eval_epoch == 0:
+            if epoch % self.eval_epoch == 0:
                 loss, eval_steps = self._eval(eval_steps, writer)
                 print('Eval: {} loss: {:.4f}'.format('Eval', loss))
 

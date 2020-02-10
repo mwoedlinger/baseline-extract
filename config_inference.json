@@ -4,8 +4,9 @@
     "device": 1
   },
   "line_finder": {
-    "auto_generate_start_points": true,
-    "weights": "trained_models/segmentation/GCN_1024_cBAD_resnext50.pt",
+    "use_GT_sp_and_angles": true,
+    "auto_generate_start_points": false,
+    "weights": "trained_models/segmentation/v1_GCN_1024_bts.pt",
     "device": 1,
     "class_file": "trained_models/segmentation/classes.txt",
     "model": "GCN",
