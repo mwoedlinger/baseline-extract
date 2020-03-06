@@ -48,7 +48,7 @@ class GCN(nn.Module):
         self.tconv4 = UpscalingConv2d(self.num_int_channels, self.num_classes)
         self.tconv5 = UpscalingConv2d(self.num_classes, self.num_classes)
 
-        self.sigmoid = nn.Sigmoid()
+        #self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = self.layer0(x)
@@ -69,6 +69,6 @@ class GCN(nn.Module):
         out1 = self.refine8(self.tconv4(fs3))
         out = self.refine9(self.tconv5(out1))
 
-        out = self.sigmoid(out)
+        #out = self.sigmoid(out)
 
         return {'out': out, 'fs3': fs3, 'fs2': fs2, 'fs1': fs1, 'gcmf1': gcfm1}

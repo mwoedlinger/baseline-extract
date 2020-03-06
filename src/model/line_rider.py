@@ -22,8 +22,9 @@ class LineRider(nn.Module):
         self.input_size = input_size
 
         if input_size == 32:
+            print('## Line Rider: input size 32')
             # in: [N, 3, 32, 32] -> out: [N, 8]
-            self.model_line = nn.Sequential(
+            self.model_line = nn.Sequential( #TODO: use different activation functions (elu, selu, ...)
                 nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
                 nn.ReLU(),
                 nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, padding=2),
@@ -57,7 +58,22 @@ class LineRider(nn.Module):
                 nn.Flatten(),
                 nn.Linear(in_features=5 * 64, out_features=2)
             )
+            # self.model_end = nn.Sequential(
+            #     nn.Conv2d(in_channels=3, out_channels=32, kernel_size=(3, 3), padding=(0, 1)),
+            #     nn.ReLU(),
+            #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(3, 3), padding=(0, 1)),  # , stride=(1, 1)),
+            #     nn.ReLU(),
+            #     nn.MaxPool2d(kernel_size=3),
+            #     nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3, 3), padding=(0, 1)),  # , stride=(1, 1)),
+            #     nn.ReLU(),
+            #     nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3, 3), padding=(0, 1)),  # , stride=(1, 1)),
+            #     nn.ReLU(),
+            #     nn.AvgPool2d(kernel_size=(3, 3)),
+            #     nn.Flatten(),
+            #     nn.Linear(in_features=3 * 64, out_features=2)
+            # )
         elif input_size == 60:
+            print('## Line Rider: input size 64')
             # in: [N, 3, 60, 60] -> out: [N, 8]
             self.model_line = nn.Sequential(
                 nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3),
@@ -260,7 +276,7 @@ class LineRider(nn.Module):
             # out, hidden = self.rider_line(img_patch, hidden=hidden)
             out = self.rider_line(img_patch)
             if mode in ['baseline', 'sp']:
-                out_end = self.rider_end(img_patch)
+                out_end = self.rider_end(img_patch.detach().requires_grad_())
 
                 bl_end = out_end[0]
                 bl_end_length = out_end[1]

@@ -78,7 +78,7 @@ class TrainerLineFinder:
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
 
         # Decay LR by a factor of 'gamma' every 'step_size' epochs
-        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.9)#20, 0.5#30
+        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)#20, 0.5#30
 
         return [optimizer, exp_lr_scheduler]
 
@@ -169,6 +169,8 @@ class TrainerLineFinder:
         writer.add_scalar(tag='loc_loss/train', scalar_value=loc_loss, global_step=steps)
         writer.add_scalar(tag='conf_loss/train', scalar_value=conf_loss, global_step=steps)
         writer.add_scalar(tag='conf_anti_loss/train', scalar_value=conf_anti_loss, global_step=steps)
+
+        self.scheduler.step()
 
         return loss, loc_loss, conf_loss, conf_anti_loss, steps
 

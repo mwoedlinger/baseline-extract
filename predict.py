@@ -43,7 +43,8 @@ def predict(config):
         if config['line_finder']['use_GT_sp_and_angles']:
             sp = sample['start_points']
             angles = sample['angles']
-            baselines = detector.extract_baselines(img, sp, angles)
+            baselines = detector.extract_baselines(img, sp, angles,
+                                                   with_segmentation=config['line_rider']['with_segmentation'])
         else:
             baselines = detector.extract_baselines(img)
         bl_string = create_prediction_string(baselines, width, height, config['data']['img_size'])

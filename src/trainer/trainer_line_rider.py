@@ -38,7 +38,7 @@ class TrainerLineRider:
         self.reset_idx = config['reset_idx_start']
 
         self.device = torch.device('cuda:' + str(self.gpu) if torch.cuda.is_available() else 'cpu')
-        self.model, self.criterion_bl, self.criterion_end = self.get_model(weights)
+        self.model, self.criterion_bl, self.criterion_end, self.criterion_length = self.get_model(weights)
 
         self.optimizer, self.scheduler = self.get_optimizer()
         self.dataloaders = self.get_dataloaders()
@@ -48,16 +48,12 @@ class TrainerLineRider:
             print('## Loading segmentation model')
             self.classes, _, _ = load_class_dict(config['segmentation_class_file'])
             self.num_classes = len(self.classes)
-            self.segmentation_gpu = config['segmentation_gpu']
             self.segmentation_weights = config['segmentation_weights']
 
-            self.segmentation_device = torch.device('cuda:' + str(self.segmentation_gpu) if torch.cuda.is_available()
-                                                    else 'cpu')
-
             # self.seg_model = models.segmentation.deeplabv3_resnet50(num_classes=self.num_classes)
-            self.seg_model = GCN(n_classes=self.num_classes, resnet_depth=50) # TODO: check config file for model type
-            self.seg_model.load_state_dict(torch.load(self.segmentation_weights, map_location=self.segmentation_device))
-            self.seg_model.to(self.segmentation_device)
+            self.seg_model = GCN(n_classes=self.num_classes, resnet_depth=50)  # TODO: check config file for model type
+            self.seg_model.load_state_dict(torch.load(self.segmentation_weights, map_location=self.device))
+            self.seg_model.to(self.device)
             self.seg_model.eval()
 
         print('\n## Trainer settings:')
@@ -75,16 +71,18 @@ class TrainerLineRider:
         if not weights:
             model_ft = LineRider(device=self.device)
         else:
+            print('## Loading pretrained model {}'.format(weights))
             model_ft = torch.load(weights, map_location=self.device)
+            model_ft.device = self.device
 
         model_ft.to(self.device)
         criterion_bl = torch.nn.MSELoss()
         # criterion_bl = torch.nn.L1Loss()
         # criterion_bl = L12Loss()
         criterion_end = torch.nn.BCELoss()
-        self.criterion_length = torch.nn.MSELoss()
+        criterion_length = torch.nn.MSELoss()
 
-        return [model_ft, criterion_bl, criterion_end]
+        return [model_ft, criterion_bl, criterion_end, criterion_length]
 
     def get_optimizer(self):
         """
@@ -95,7 +93,7 @@ class TrainerLineRider:
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
 
         # Decay LR by a factor of 'gamma' every 'step_size' epochs
-        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.8)#0.8
+        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9)#0.8
 
         return [optimizer, exp_lr_scheduler]
 
@@ -106,18 +104,18 @@ class TrainerLineRider:
         :return: The dataloaders
         """
 
-        shuffle = {'train': True, 'eval': False}
-        batch_size_dict = {'train': self.batch_size, 'eval': 1}
+        shuffle = {'train': True, 'eval': False, 'test': False}
+        batch_size_dict = {'train': self.batch_size, 'eval': 1, 'test': 1}
 
         image_datasets = {inf_type: DatasetLineRider(inf_type=inf_type,
                                                      parameters=self.parameters)
-                          for inf_type in ['train', 'eval']}
+                          for inf_type in ['train', 'eval', 'test']}
 
         dataloaders = {inf_type: torch.utils.data.DataLoader(image_datasets[inf_type],
                                                              batch_size=batch_size_dict[inf_type],
                                                              shuffle=shuffle[inf_type],
                                                              num_workers=1)
-                       for inf_type in ['train', 'eval']}
+                       for inf_type in ['train', 'eval', 'test']}
 
         return dataloaders
 
@@ -149,7 +147,6 @@ class TrainerLineRider:
 
         # Iterate over data.
         for batch in tqdm(self.dataloaders['train'], dynamic_ncols=True):
-
             if steps % reset_counter_steps == reset_counter_steps-1:
                 if self.reset_idx < 8:
                     self.reset_idx += 1
@@ -179,7 +176,8 @@ class TrainerLineRider:
                 pred_list = []
 
             with torch.set_grad_enabled(True):
-                loss = 0
+                # loss = 0
+                # loss_end = 0
                 for n in range(number_of_baselines):
 
                     # zero the parameter gradients
@@ -210,30 +208,28 @@ class TrainerLineRider:
                     # The loss is a combination of the regression loss for prediction of the baseline coordinates,
                     # the length of the last baseline segment and the classification loss for the prediction of
                     # the baseline end.
-                    loss += self.criterion_bl(l_pred, l_label)
-                    loss_end = self.criterion_end(l_bl_end_pred, l_bl_end_label) \
-                               + self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
+                    loss = self.criterion_bl(l_pred, l_label)
+                    loss_end = self.criterion_end(l_bl_end_pred, l_bl_end_label)\
+                                + self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
 
-                    # backward + optimize end loss
-                    loss_end.backward()
-                    self.optimizer.step()
-
-                    running_loss += loss
-                    running_bl_loss += self.criterion_bl(l_pred, l_label)
-                    running_end_loss += self.criterion_end(l_bl_end_pred, l_bl_end_label)
-                    running_length_loss += self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
+                    running_loss += loss.detach()
+                    running_bl_loss += self.criterion_bl(l_pred, l_label).detach()
+                    running_end_loss += self.criterion_end(l_bl_end_pred, l_bl_end_label).detach()
+                    running_length_loss += self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label).detach()
 
                     running_counter += 1
 
-                if loss > 0:
-                    # backward + optimize
-                    loss.backward()
-                    self.optimizer.step()
+                    if loss > 0:
+                        # backward + optimize
+                        loss.backward()
+                        loss_end.backward()
+                        self.optimizer.step()
 
             # Every tensorboard_img_steps steps save the result to tensorboard:
             if steps % tensorboard_img_steps == tensorboard_img_steps-1:
                 dbimg = draw_baselines(image=image[0], baselines=pred_list)
                 writer.add_image(tag='train/pred', img_tensor=dbimg, global_step=steps)
+
 
         loss = running_loss/running_counter
         bl_loss = running_bl_loss/running_counter
@@ -276,7 +272,6 @@ class TrainerLineRider:
 
             # if self.with_seg is true the model performs a segmentation and uses the segmentation information
             # for computing the baselines.
-
             if self.with_seg:
                 with torch.no_grad():
                     seg_out = self.seg_model(image)['out']
@@ -318,6 +313,7 @@ class TrainerLineRider:
                     # c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, baseline=bl_n,
                     #                                                      reset_idx=30)
 
+
                     # Every tensorboard_img_steps steps save the result to tensorboard:
                     if eval_steps % tensorboard_img_steps == tensorboard_img_steps-1:
                         pred_list.append(c_list)
@@ -333,10 +329,10 @@ class TrainerLineRider:
                            + self.criterion_end(l_bl_end_pred, l_bl_end_label) \
                            + self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
 
-                    running_loss += loss
-                    running_bl_loss += self.criterion_bl(l_pred, l_label)
-                    running_end_loss += self.criterion_end(l_bl_end_pred, l_bl_end_label)
-                    running_length_loss += self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
+                    running_loss += loss.detach()
+                    running_bl_loss += self.criterion_bl(l_pred, l_label).detach()
+                    running_end_loss += self.criterion_end(l_bl_end_pred, l_bl_end_label).detach()
+                    running_length_loss += self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label).detach()
 
                     running_counter += 1
 
@@ -357,6 +353,103 @@ class TrainerLineRider:
         writer.add_scalar(tag='length_loss/eval', scalar_value=length_loss, global_step=eval_steps)
 
         return loss, eval_steps
+
+
+    def test(self):
+        """
+        Tests the model on the test set and prints the results.
+        """
+        # TODO: compute box_size
+        self.model.eval()
+        self.model.data_augmentation = False
+
+
+        running_loss = 0
+        running_bl_loss = 0
+        running_end_loss = 0
+        running_length_loss = 0
+        running_counter = 0
+
+        # Iterate over data.
+        for batch in tqdm(self.dataloaders['test'], dynamic_ncols=True):
+            image = batch['image'].to(self.device)
+            baselines = batch['baselines'][0]
+            bl_lengths = batch['bl_lengths'][0]
+
+            # if self.with_seg is true the model performs a segmentation and uses the segmentation information
+            # for computing the baselines.
+
+            if self.with_seg:
+                with torch.no_grad():
+                    seg_out = self.seg_model(image)['out']
+                    seg_out.detach()
+                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('sp_ep_border'), self.classes.index('baselines')], :, :]], dim=1).detach()
+
+            # Compute the number of baselines. The baselines are padded with [-1] and [-1,-1].
+            # number_of_baselines is the real number of baselines not counting the padding and bl_lengths[idx]
+            nbl_list = [idx for idx in range(0, len(bl_lengths)) if bl_lengths[idx] == -1]
+            if nbl_list:
+                number_of_baselines = min(nbl_list)
+            else:
+                number_of_baselines = len(bl_lengths)
+            start_points = torch.tensor([[bl[0, 0], bl[0, 1]] for bl in baselines[0:number_of_baselines]])
+            end_points = torch.tensor([[bl[-1, 0], bl[-1, 1]] for bl in baselines[0:number_of_baselines]])
+
+            with torch.no_grad():
+                for n in range(number_of_baselines):
+                    # Compute box size
+                    box_size = int(get_smallest_distance(start_points[n], start_points))
+                    box_size = max(10, min(48, box_size))
+
+                    # Normalise the baselines such that each line segment has the length 'box_size'
+                    bl = baselines[n][:bl_lengths[n]]
+                    bl_n = normalize_baselines(bl, 2*box_size) #TODO: make it clearer that 2*box_size is used
+                    if len(bl_n) == 1:
+                        print('Skip baseline with single point.')
+                        continue
+                    bl_n = bl_n.to(self.device)
+                    bl_n_end_length = d2(bl_n[-1, 0], bl_n[-1, 1], bl_n[-2, 0], bl_n[-2, 1])/(2*box_size)
+
+                    x_0, y_0, angle = compute_start_and_angle(baseline=bl_n, idx=0)
+                    sp = torch.tensor([x_0, y_0]).to(self.device)
+                    angle = angle.to(self.device)
+                    ep = end_points[n].to(self.device)
+
+                    c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, sp=sp,
+                                                                            angle_0=angle)
+                    # c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, baseline=bl_n,
+                    #                                                      reset_idx=30)
+
+                    l_label, l_pred, l_bl_end_label, l_bl_end_pred, l_bl_end_length_label, l_bl_end_length_pred = \
+                        prepare_data_for_loss(bl_n, c_list, bl_end_list, bl_n_end_length,
+                                              bl_end_length_list, box_size, self.device)
+
+                    # The loss is a combination of the regression loss for prediction of the baseline coordinates,
+                    # the length of the last baseline segment and the classification loss for the prediction of
+                    # the baseline end.
+                    loss = self.criterion_bl(l_pred, l_label) \
+                           + self.criterion_end(l_bl_end_pred, l_bl_end_label) \
+                           + self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label)
+
+                    running_loss += loss.detach()
+                    running_bl_loss += self.criterion_bl(l_pred, l_label).detach()
+                    running_end_loss += self.criterion_end(l_bl_end_pred, l_bl_end_label).detach()
+                    running_length_loss += self.criterion_length(l_bl_end_length_pred, l_bl_end_length_label).detach()
+
+                    running_counter += 1
+
+
+        loss = running_loss/running_counter
+        bl_loss = running_bl_loss/running_counter
+        end_loss = running_end_loss/running_counter
+        length_loss = running_end_loss/running_counter
+
+        print('\nloss:        {}'.format(loss))
+        print('bl_loss:     {}'.format(bl_loss))
+        print('end_loss:    {}'.format(end_loss))
+        print('length_loss: {}\n'.format(length_loss))
+
+        return loss, bl_loss, end_loss, length_loss
 
 
     def train(self):
@@ -405,6 +498,9 @@ class TrainerLineRider:
         # load best model weights
         self.model.load_state_dict(best_model_wts)
         torch.save(self.model, os.path.join(self.output_folder, 'line_rider', self.exp_name + '.pt'))
+
+        # Test model
+        self.test()
 
         writer.close()
 

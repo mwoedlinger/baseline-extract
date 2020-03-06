@@ -1,15 +1,15 @@
 {
-  "exp_name": "default",
+  "exp_name": "new",
   "log_dir": "tensorboard",
   "output_folder": "trained_models",
-  "gpu": 1,
-  "lr": 6e-4,
+  "gpu": 2,
+  "lr": 4e-5,
   "batch_size": 16,
   "epochs": 60,
   "eval_epoch": 5,
   "reset_idx_start": null,
   "segmentation": {
-    "segmentation_gpu": 1,
+    "segmentation_gpu": 2,
     "segmentation_weights": null,
     "segmentation_classes": 6
   },

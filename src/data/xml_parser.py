@@ -38,14 +38,15 @@ class XMLParser:
                         # One file (cPAS-2508.xml) contains a baseline without a 'Baseline' field.
                         if len(child.getchildren()) > 1:
                             baseline_string = child.getchildren()[1].attrib['points']
-                        baseline_points_string = baseline_string.split()
+                            
+                            baseline_points_string = baseline_string.split()
 
-                        points = []
-                        for p in baseline_points_string:
-                            point = Point()
-                            point.set_from_string(coords=p, sep=',')
-                            points.append(point)
-                        baselines.append(points)
+                            points = []
+                            for p in baseline_points_string:
+                                point = Point()
+                                point.set_from_string(coords=p, sep=',')
+                                points.append(point)
+                            baselines.append(points)
 
         return baselines
 
