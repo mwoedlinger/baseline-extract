@@ -308,10 +308,10 @@ class TrainerLineRider:
                     angle = angle.to(self.device)
                     ep = end_points[n].to(self.device)
 
-                    c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, sp=sp,
-                                                                            angle_0=angle)
-                    # c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, baseline=bl_n,
-                    #                                                      reset_idx=30)
+                    # c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, sp=sp,
+                    #                                                         angle_0=angle)
+                    c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, baseline=bl_n,
+                                                                         reset_idx=100)
 
 
                     # Every tensorboard_img_steps steps save the result to tensorboard:

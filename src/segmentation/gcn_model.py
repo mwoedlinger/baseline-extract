@@ -4,7 +4,7 @@ import torch.nn as nn
 
 
 class GCN(nn.Module):
-    def __init__(self, n_classes, resnet_depth: int=50):
+    def __init__(self, n_classes, resnet_depth: int=50, upscale='nn'):
         super(GCN, self).__init__()
 
         self.num_classes = n_classes
@@ -42,13 +42,20 @@ class GCN(nn.Module):
         self.refine8 = Refine(self.num_classes)
         self.refine9 = Refine(self.num_classes)
 
-        self.tconv1 = UpscalingConv2d(self.num_int_channels, self.num_int_channels)
-        self.tconv2 = UpscalingConv2d(self.num_int_channels, self.num_int_channels)
-        self.tconv3 = UpscalingConv2d(self.num_int_channels, self.num_int_channels)
-        self.tconv4 = UpscalingConv2d(self.num_int_channels, self.num_classes)
-        self.tconv5 = UpscalingConv2d(self.num_classes, self.num_classes)
-
-        #self.sigmoid = nn.Sigmoid()
+        if upscale == 'deconv':
+            self.tconv1 = UpscalingConv2d(self.num_int_channels, self.num_int_channels)
+            self.tconv2 = UpscalingConv2d(self.num_int_channels, self.num_int_channels)
+            self.tconv3 = UpscalingConv2d(self.num_int_channels, self.num_int_channels)
+            self.tconv4 = UpscalingConv2d(self.num_int_channels, self.num_classes)
+            self.tconv5 = UpscalingConv2d(self.num_classes, self.num_classes)
+        elif upscale == 'nn':
+            self.tconv1 = UpscalingNN(self.num_int_channels, self.num_int_channels)
+            self.tconv2 = UpscalingNN(self.num_int_channels, self.num_int_channels)
+            self.tconv3 = UpscalingNN(self.num_int_channels, self.num_int_channels)
+            self.tconv4 = UpscalingNN(self.num_int_channels, self.num_classes)
+            self.tconv5 = UpscalingNN(self.num_classes, self.num_classes)
+        else:
+            raise NotImplementedError
 
     def forward(self, x):
         x = self.layer0(x)
@@ -68,7 +75,6 @@ class GCN(nn.Module):
         fs3 = self.refine7(self.tconv3(fs2) + gcfm4)
         out1 = self.refine8(self.tconv4(fs3))
         out = self.refine9(self.tconv5(out1))
-
-        #out = self.sigmoid(out)
+        # The sigmoid is already included in the loss function!
 
         return {'out': out, 'fs3': fs3, 'fs2': fs2, 'fs1': fs1, 'gcmf1': gcfm1}

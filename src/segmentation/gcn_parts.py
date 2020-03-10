@@ -13,6 +13,20 @@ class UpscalingConv2d(nn.Module):
     def forward(self, x):
         return self.tconv2d(x)
 
+class UpscalingNN(nn.Module):
+    """
+    Upscaling with nearest neighbour and convolution.
+    """
+    def __init__(self, in_classes, out_classes):
+        super(UpscalingNN, self).__init__()
+        self.conv = nn.Conv2d(in_classes, out_classes, kernel_size=3, stride=1, padding=1)
+
+    def forward(self, x):
+        out = nn.functional.interpolate(x, scale_factor=2, mode='nearest')
+        out = self.conv(out)
+
+        return out
+
 
 class GCN_module(nn.Module):
     """

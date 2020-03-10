@@ -43,7 +43,7 @@ class LineRider(nn.Module):
                 nn.ReLU(),
                 nn.MaxPool2d(kernel_size=2),
                 nn.Flatten(),
-                nn.Linear(in_features=128, out_features=8)
+                nn.Linear(in_features=128, out_features=2)
             )
 
             # in: [N, 3, 32, 32] -> out: [N, 8]
@@ -125,8 +125,6 @@ class LineRider(nn.Module):
         #     nn.Linear(in_features=256, out_features=8)
         # )
 
-        self.lin_out = nn.Linear(in_features=8, out_features=2)
-        self.lin_out_end = nn.Linear(in_features=8, out_features=2)
 
     def rider_line(self, x):
         """
