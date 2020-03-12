@@ -38,6 +38,8 @@ class XMLParserInference:
                         # One file (cPAS-2508.xml) contains a baseline without a 'Baseline' field.
                         if len(child.getchildren()) > 1:
                             baseline_string = child.getchildren()[1].attrib['points']
+                        else:
+                            continue
                         baseline_points_string = baseline_string.split()
 
                         points = []

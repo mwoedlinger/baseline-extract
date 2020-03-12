@@ -28,6 +28,7 @@ class DatasetInference(Dataset):
         image = Image.open(self.images[idx])
 
         width, height = image.size
+        #print('w: {}, h: {}. A = {}'.format(width/1000.0, height/1000.0, width*height/1000000.0))
 
         image = self.transforms(image)
 

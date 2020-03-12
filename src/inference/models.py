@@ -69,9 +69,10 @@ class LineDetector:
 
         print('## Load Line Rider:')
         self.line_rider = self.load_line_rider_model(line_rider_weights, self.device_lr)
-        print('## Load Line Finder:')
-        self.line_finder_seg = self.load_line_finder_model(line_finder_weights, self.device_lf, )
-        print('## Loaded!')
+        if config['line_rider']['with_segmentation']:
+            print('## Load Line Finder:')
+            self.line_finder_seg = self.load_line_finder_model(line_finder_weights, self.device_lf, )
+            print('## Loaded!')
 
     def load_line_rider_model(self, weights, device):
         model = torch.load(weights, map_location=device)
@@ -244,20 +245,9 @@ class LineDetector:
     def extract_baselines(self, image: torch.tensor, start_points=None, angles=None, with_segmentation=False):
         image = image.unsqueeze(0).to(self.device_lf)
 
-        # if baselines is None extract the start points and angles from the segmentation
-        if start_points is None:
-            seg_out = self.line_finder_seg(image)['out']
-
-            # image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
-            image_seg = torch.cat(
-                [image[:, 0:1, :, :], seg_out[:, 0:1, :, :], seg_out[:, 1:2, :, :] + seg_out[:, 2:3, :, :]],
-                dim=1).detach()
-
-            start_points, end_points, angles, label_list = self.extract_start_points_and_angles(
-                seg_out.cpu().detach().numpy())
-            sp_values = torch.tensor(list(start_points.values())).to(self.device_lr)
-        else:
-            if with_segmentation:
+        with torch.no_grad():
+            # if baselines is None extract the start points and angles from the segmentation
+            if start_points is None:
                 seg_out = self.line_finder_seg(image)['out']
 
                 # image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
@@ -265,50 +255,56 @@ class LineDetector:
                     [image[:, 0:1, :, :], seg_out[:, 0:1, :, :], seg_out[:, 1:2, :, :] + seg_out[:, 2:3, :, :]],
                     dim=1).detach()
 
-            label_list = list(range(0, len(start_points)))
-            # start_points = {l: start_points_list[l] for l in label_list}
-            # angles = {l: angles_list[l] for l in label_list}
-            sp_values = start_points.to(self.device_lr)
-            end_points = {}
-
-        baselines = []
-        ep_label_list = end_points.keys()
-
-        for l in label_list:
-            sp = torch.tensor(start_points[l]).to(self.device_lr)
-            angle = torch.tensor(angles[l]).to(self.device_lr)
-
-            # Compute box size
-            box_size = int(get_smallest_distance(sp, sp_values))
-            box_size = max(10, min(48, box_size))
-            if box_size == 0:
-                box_size = min(10, max(32, get_median_diff(start_points) / 2.0))
-
-            box_size = torch.tensor(box_size).float()
-
-            if l in ep_label_list:
-                ep = torch.tensor(end_points[l]).to(self.device_lr)
-
-                # TODO: add segmentation
-                if with_segmentation:
-                    baseline, _, _, _ = self.line_rider(img=image_seg, box_size=box_size, sp=sp, angle_0=angle)
-                else:
-                    baseline, _, _, _ = self.line_rider(img=image, box_size=box_size, sp=sp, angle_0=angle)
-
-                baseline[-1] = ep
+                start_points, end_points, angles, label_list = self.extract_start_points_and_angles(
+                    seg_out.cpu().detach().numpy())
+                sp_values = torch.tensor(list(start_points.values())).to(self.device_lr)
             else:
-                # TODO: add segmentation
                 if with_segmentation:
-                    baseline, _, _, _ = self.line_rider(img=image_seg, box_size=box_size, sp=sp, angle_0=angle)
-                else:
-                    baseline, _, _, _ = self.line_rider(img=image, box_size=box_size, sp=sp, angle_0=angle)
+                    seg_out = self.line_finder_seg(image)['out']
 
-            baselines.append(baseline)
+                    # image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
+                    image_seg = torch.cat(
+                        [image[:, 0:1, :, :], seg_out[:, 0:1, :, :], seg_out[:, 1:2, :, :] + seg_out[:, 2:3, :, :]],
+                        dim=1).detach()
+
+                label_list = list(range(0, len(start_points)))
+                # start_points = {l: start_points_list[l] for l in label_list}
+                # angles = {l: angles_list[l] for l in label_list}
+                sp_values = start_points.to(self.device_lr)
+                end_points = {}
+
+            baselines = []
+            ep_label_list = end_points.keys()
+
+            for l in label_list:
+                sp = torch.tensor(start_points[l]).to(self.device_lr)
+                angle = torch.tensor(angles[l]).to(self.device_lr)
+
+                # Compute box size
+                box_size = int(get_smallest_distance(sp, sp_values))
+                box_size = max(10, min(48, box_size))
+                if box_size == 0:
+                    box_size = min(10, max(32, get_median_diff(start_points) / 2.0))
+
+                box_size = torch.tensor(box_size).float()
+
+                if l in ep_label_list:
+                    ep = torch.tensor(end_points[l]).to(self.device_lr)
+
+                    # TODO: add segmentation
+                    if with_segmentation:
+                        baseline, _, _, _ = self.line_rider(img=image_seg, box_size=box_size, sp=sp, angle_0=angle)
+                    else:
+                        baseline, _, _, _ = self.line_rider(img=image, box_size=box_size, sp=sp, angle_0=angle)
+
+                    baseline[-1] = ep
+                else:
+                    # TODO: add segmentation
+                    if with_segmentation:
+                        baseline, _, _, _ = self.line_rider(img=image_seg, box_size=box_size, sp=sp, angle_0=angle)
+                    else:
+                        baseline, _, _, _ = self.line_rider(img=image, box_size=box_size, sp=sp, angle_0=angle)
+
+                baselines.append(baseline)
 
         return baselines
-
-
-
-
-
-

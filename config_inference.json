@@ -7,7 +7,7 @@
   "line_finder": {
     "use_GT_sp_and_angles": true,
     "auto_generate_start_points": false,
-    "weights": "trained_models/segmentation/v1_GCN_1024_bts.pt",
+    "weights": "trained_models/segmentation/######v13_GCN_1024_bg_t_bo_ba_e_s.pt",
     "device": 3,
     "class_file": "trained_models/segmentation/classes.txt",
     "model": "GCN",

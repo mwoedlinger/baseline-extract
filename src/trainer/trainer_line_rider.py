@@ -152,7 +152,7 @@ class TrainerLineRider:
                     self.reset_idx += 1
 
             image = batch['image'].to(self.device)
-            baselines = batch['baselines'][0]
+            baselines = batch['baselines'][0].float()
             bl_lengths = batch['bl_lengths'][0]
 
             # if self.with_seg is true the model performs a segmentation and uses the segmentation information
@@ -186,7 +186,7 @@ class TrainerLineRider:
                     # Compute box size
                     box_size = int(get_smallest_distance(start_points[n], start_points))
                     box_size = max(10, min(48, box_size)) + random.randint(-3, 10)
-                    # +5: Larger box sizes make are more difficult => regularization
+                    # +5: Larger box sizes are more difficult => regularization
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]
@@ -196,7 +196,8 @@ class TrainerLineRider:
 
                     c_list, bl_end_list, bl_end_length_list, _ = self.model(img=image, box_size=box_size, baseline=bl_n,
                                                                             reset_idx=self.reset_idx)
-
+                    if not c_list.requires_grad:
+                        continue
                     # Every tensorboard_img_steps steps save the result to tensorboard:
                     if steps % tensorboard_img_steps == tensorboard_img_steps-1:
                         pred_list.append(c_list)
@@ -267,7 +268,7 @@ class TrainerLineRider:
         # Iterate over data.
         for batch in tqdm(self.dataloaders['eval'], dynamic_ncols=True):
             image = batch['image'].to(self.device)
-            baselines = batch['baselines'][0]
+            baselines = batch['baselines'][0].float()
             bl_lengths = batch['bl_lengths'][0]
 
             # if self.with_seg is true the model performs a segmentation and uses the segmentation information
@@ -373,7 +374,7 @@ class TrainerLineRider:
         # Iterate over data.
         for batch in tqdm(self.dataloaders['test'], dynamic_ncols=True):
             image = batch['image'].to(self.device)
-            baselines = batch['baselines'][0]
+            baselines = batch['baselines'][0].float()
             bl_lengths = batch['bl_lengths'][0]
 
             # if self.with_seg is true the model performs a segmentation and uses the segmentation information

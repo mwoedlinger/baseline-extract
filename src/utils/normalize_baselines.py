@@ -3,7 +3,7 @@ import math
 import random
 from .distances import d2
 
-def normalize_baselines(bl: list, segment_length: float):
+def normalize_baselines(bl_par: list, segment_length: float):
     """
     Takes a baseline as input and returns a baseline that consists of normalized line segments.
     That means that the baseline consists of a list of points where each point is exactly 'segment_length' away
@@ -13,6 +13,7 @@ def normalize_baselines(bl: list, segment_length: float):
     :return: a baseline
     """
 
+    bl = bl_par
     new_bl = [bl[0]]
     # new_bl = bl[0].unsqueeze(0).to(device)
 
@@ -59,6 +60,7 @@ def compute_start_and_angle(baseline, idx, data_augmentation=False, box_size=Non
     :param data_augmentation: if set to True perturbs the point and angle randomly by small values
     :return: a tuple of x coordinate of the point, y coordinate and the angle
     """
+
     if torch.abs(baseline[idx, 0] - baseline[idx + 1, 0]) < 0.001:
         if baseline[idx, 1] > baseline[idx + 1, 1]:
             angle = torch.tensor(math.pi / 2.0)
@@ -79,8 +81,8 @@ def compute_start_and_angle(baseline, idx, data_augmentation=False, box_size=Non
                         (baseline[idx, 0] - baseline[idx + 1, 0]) / (baseline[idx, 1] - baseline[idx + 1, 1])) - math.pi/2
     # ^ positive x direction is towards right and positive y direction is downwards.
 
-    x = baseline[idx, 0]
-    y = baseline[idx, 1]
+    x = baseline[idx, 0].clone()
+    y = baseline[idx, 1].clone()
 
     # Perturb position and angle, otherwise the network will learn to always predict angle = 0
     if data_augmentation:
