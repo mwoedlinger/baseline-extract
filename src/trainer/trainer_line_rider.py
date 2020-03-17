@@ -4,15 +4,13 @@ import copy
 import random
 from tqdm import tqdm
 import torch
-from torchvision import models
 from torch.utils.tensorboard import SummaryWriter
 from ..data.dataset_line_rider import DatasetLineRider, prepare_data_for_loss
 from ..utils.normalize_baselines import normalize_baselines, compute_start_and_angle
 from ..utils.visualization import draw_baselines
 from ..model.line_rider import LineRider
-from ..model.loss import L12Loss
 from ..segmentation.gcn_model import GCN
-from ..utils.distances import get_median_diff, d2, get_smallest_distance
+from ..utils.distances import d2, get_smallest_distance
 from ..utils.utils import get_lr, load_class_dict
 
 
@@ -30,6 +28,7 @@ class TrainerLineRider:
         self.lr = config['lr']
         self.gpu = config['gpu']
         self.with_seg = config['with_seg']
+        self.seg_gpu = config['segmentation_gpu']
         self.batch_size = 1#config['batch_size']
         self.epochs = config['epochs']
         self.eval_epoch = config['eval_epoch']
@@ -38,6 +37,7 @@ class TrainerLineRider:
         self.reset_idx = config['reset_idx_start']
 
         self.device = torch.device('cuda:' + str(self.gpu) if torch.cuda.is_available() else 'cpu')
+        self.seg_device = torch.device('cuda:' + str(self.seg_gpu) if torch.cuda.is_available() else 'cpu')
         self.model, self.criterion_bl, self.criterion_end, self.criterion_length = self.get_model(weights)
 
         self.optimizer, self.scheduler = self.get_optimizer()
@@ -52,8 +52,8 @@ class TrainerLineRider:
 
             # self.seg_model = models.segmentation.deeplabv3_resnet50(num_classes=self.num_classes)
             self.seg_model = GCN(n_classes=self.num_classes, resnet_depth=50)  # TODO: check config file for model type
-            self.seg_model.load_state_dict(torch.load(self.segmentation_weights, map_location=self.device))
-            self.seg_model.to(self.device)
+            self.seg_model.load_state_dict(torch.load(self.segmentation_weights, map_location=self.seg_device))
+            self.seg_model.to(self.seg_device)
             self.seg_model.eval()
 
         print('\n## Trainer settings:')
@@ -137,7 +137,7 @@ class TrainerLineRider:
         print('LR: {}'.format(get_lr(self.optimizer)))
 
         tensorboard_img_steps = 399
-        reset_counter_steps = 399#499#399
+        reset_counter_steps = 399
 
         running_loss = 0
         running_bl_loss = 0
@@ -148,7 +148,7 @@ class TrainerLineRider:
         # Iterate over data.
         for batch in tqdm(self.dataloaders['train'], dynamic_ncols=True):
             if steps % reset_counter_steps == reset_counter_steps-1:
-                if self.reset_idx < 8:
+                if self.reset_idx < 8: # TODO TODO TODO ???? set back to 4? maybe 8 is too extreme; also extra steps for baseine end training!!
                     self.reset_idx += 1
 
             image = batch['image'].to(self.device)
@@ -158,10 +158,17 @@ class TrainerLineRider:
             # if self.with_seg is true the model performs a segmentation and uses the segmentation information
             # for computing the baselines.
             if self.with_seg:
+                # seg_image = batch['seg_image'].to(self.seg_device)
+                # with torch.no_grad():
+                #     seg_out = self.seg_model(seg_image)['out'].detach().to(self.device)
+                #     seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
+                # image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
+
                 with torch.no_grad():
-                    seg_out = self.seg_model(image)['out']
-                    seg_out.detach()
-                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('sp_ep_border'), self.classes.index('baselines')], :, :]], dim=1).detach()
+                    seg_out = self.seg_model(image.to(self.seg_device))['out'].detach().to(self.device)
+                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
+
+
 
             steps += 1
 
@@ -185,7 +192,7 @@ class TrainerLineRider:
 
                     # Compute box size
                     box_size = int(get_smallest_distance(start_points[n], start_points))
-                    box_size = max(10, min(48, box_size)) + random.randint(-3, 10)
+                    box_size = max(10, min(80, box_size)) + random.randint(-3, 10)#48
                     # +5: Larger box sizes are more difficult => regularization
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
@@ -274,10 +281,17 @@ class TrainerLineRider:
             # if self.with_seg is true the model performs a segmentation and uses the segmentation information
             # for computing the baselines.
             if self.with_seg:
+                # seg_image = batch['seg_image'].to(self.seg_device)
+                # with torch.no_grad():
+                #     seg_out = self.seg_model(seg_image)['out'].detach().to(self.device)
+                #     seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
+                # image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
+
                 with torch.no_grad():
-                    seg_out = self.seg_model(image)['out']
-                    seg_out.detach()
-                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('sp_ep_border'), self.classes.index('baselines')], :, :]], dim=1).detach()
+                    seg_out = self.seg_model(image.to(self.seg_device))['out'].detach().to(self.device)
+                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
+
+
 
             eval_steps += image.size(0)
 
@@ -296,7 +310,7 @@ class TrainerLineRider:
                 for n in range(number_of_baselines):
                     # Compute box size
                     box_size = int(get_smallest_distance(start_points[n], start_points))
-                    box_size = max(10, min(48, box_size))
+                    box_size = max(10, min(80, box_size))
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]
@@ -381,10 +395,16 @@ class TrainerLineRider:
             # for computing the baselines.
 
             if self.with_seg:
+                # seg_image = batch['seg_image'].to(self.seg_device)
+                # with torch.no_grad():
+                #     seg_out = self.seg_model(seg_image)['out'].detach().to(self.device)
+                #     seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
+                # image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
+
                 with torch.no_grad():
-                    seg_out = self.seg_model(image)['out']
-                    seg_out.detach()
-                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('sp_ep_border'), self.classes.index('baselines')], :, :]], dim=1).detach()
+                    seg_out = self.seg_model(image.to(self.seg_device))['out'].detach().to(self.device)
+                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
+
 
             # Compute the number of baselines. The baselines are padded with [-1] and [-1,-1].
             # number_of_baselines is the real number of baselines not counting the padding and bl_lengths[idx]
@@ -400,7 +420,7 @@ class TrainerLineRider:
                 for n in range(number_of_baselines):
                     # Compute box size
                     box_size = int(get_smallest_distance(start_points[n], start_points))
-                    box_size = max(10, min(48, box_size))
+                    box_size = max(10, min(80, box_size))
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]

@@ -14,12 +14,18 @@ class DatasetInference(Dataset):
         self.GT_sp = get_GT_start_points
         self.images, self.xml_files = self.list_files()
         self.img_size = img_size
-        self.transforms = transforms.Compose([transforms.Resize((self.img_size, self.img_size),
+        # self.transforms = transforms.Compose([transforms.Resize((self.img_size, self.img_size),
+        #                                                         interpolation=PIL.Image.NEAREST),
+        #                                       transforms.Grayscale(num_output_channels=3),
+        #                                       transforms.ToTensor(),
+        #                                       transforms.Normalize(mean=[0.6784], std=[0.2092])
+        #                                       ])
+        self.transforms = transforms.Compose([transforms.Resize(self.img_size,
                                                                 interpolation=PIL.Image.NEAREST),
                                               transforms.Grayscale(num_output_channels=3),
                                               transforms.ToTensor(),
                                               transforms.Normalize(mean=[0.6784], std=[0.2092])
-                                              ])
+        ])
 
     def __len__(self) -> int:
         return len(self.images)

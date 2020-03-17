@@ -50,6 +50,7 @@ def predict(config):
         bl_string = create_prediction_string(baselines, width, height, config['data']['img_size'])
 
         text_name = os.path.basename(filename).split('.')[0]+'.txt'
+        text_name.replace('data', '').replace('/', '\\')
         with open(os.path.join(output_folder, text_name), 'w') as txt_file:
             txt_file.writelines(bl_string)
 

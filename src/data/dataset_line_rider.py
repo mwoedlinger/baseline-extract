@@ -60,14 +60,21 @@ class DatasetLineRider(Dataset):
         self.input_folder = os.path.join(parameters['input_folder'], inf_type)
         self.inf_type = inf_type
         self.images, self.labels = self.list_files()
-        self.max_side = parameters['max_side']
-        self.transforms = transforms.Compose([transforms.Resize((self.max_side, self.max_side),
+        self.min_side = parameters['max_side']
+        self.transforms = transforms.Compose([transforms.Resize(self.min_side, #self.min_side),
                                                                 interpolation=PIL.Image.NEAREST),
-                                              #transforms.Grayscale(num_output_channels=3),
+                                              transforms.Grayscale(num_output_channels=3),
                                               transforms.ToTensor(),
                                               transforms.Normalize(mean=[0.7219, 0.6874, 0.6260],
                                                                    std=[0.2174, 0.2115, 0.1989])
                                               ])
+        # self.seg_transforms = transforms.Compose([transforms.Resize(self.min_side, #self.max_side),
+        #                                                         interpolation=PIL.Image.NEAREST),
+        #                                       transforms.Grayscale(num_output_channels=3),
+        #                                       transforms.ToTensor(),
+        #                                       transforms.Normalize(mean=[0.7219, 0.6874, 0.6260],
+        #                                                            std=[0.2174, 0.2115, 0.1989])
+        #                                       ])
 
         self.max_bl_length = 1000
         self.max_bl_no = 2500
@@ -80,7 +87,7 @@ class DatasetLineRider(Dataset):
     def __getitem__(self, idx: int):
         image = PIL.Image.open(self.images[idx])
         parser = XMLParser(self.labels[idx])
-        parser.scale(self.max_side)
+        parser.scale(self.min_side)
         baselines = parser.get_baselines()
         #TODO: add data augmentation: negative colors? also add segmentation!
 
@@ -101,6 +108,7 @@ class DatasetLineRider(Dataset):
         #     image = PIL.ImageOps.invert(image)
 
         sample = {'image': self.transforms(image),
+                  # 'seg_image': self.seg_transforms(image),
                   'baselines': torch.tensor(baselines_padded),
                   'bl_lengths': torch.tensor(bl_lengths_padded)}
 

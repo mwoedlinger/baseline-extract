@@ -58,9 +58,8 @@ class GCN(nn.Module):
             raise NotImplementedError
 
     def forward(self, x):
-        x = self.layer0(x)
-
-        fm1 = self.layer1(x)
+        fm0 = self.layer0(x)
+        fm1 = self.layer1(fm0)
         fm2 = self.layer2(fm1)
         fm3 = self.layer3(fm2)
         fm4 = self.layer4(fm3)
@@ -70,11 +69,13 @@ class GCN(nn.Module):
         gcfm3 = self.refine3(self.gcn3(fm2))
         gcfm4 = self.refine4(self.gcn4(fm1))
 
-        fs1 = self.refine5(self.tconv1(gcfm1) + gcfm2)
-        fs2 = self.refine6(self.tconv2(fs1) + gcfm3)
-        fs3 = self.refine7(self.tconv3(fs2) + gcfm4)
+        fs1 = self.refine5(nn.functional.interpolate(self.tconv1(gcfm1), size=gcfm2.size()[2:], mode='nearest') + gcfm2)
+        fs2 = self.refine6(nn.functional.interpolate(self.tconv2(fs1), size=gcfm3.size()[2:], mode='nearest') + gcfm3)
+        fs3 = self.refine7(nn.functional.interpolate(self.tconv3(fs2), size=gcfm4.size()[2:], mode='nearest') + gcfm4)
         out1 = self.refine8(self.tconv4(fs3))
         out = self.refine9(self.tconv5(out1))
+        out = nn.functional.interpolate(out, size=x.size()[2:], mode='nearest')
         # The sigmoid is already included in the loss function!
 
         return {'out': out, 'fs3': fs3, 'fs2': fs2, 'fs1': fs1, 'gcmf1': gcfm1}
+
