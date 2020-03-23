@@ -15,7 +15,7 @@ class LineRider(nn.Module):
           box_size = size of the window that gets extracted (receptive field)
     """
 
-    def __init__(self, device: str, input_size: int = 60):
+    def __init__(self, device: str, input_size: int = 32):
         super(LineRider, self).__init__()
         self.device = device
         self.data_augmentation = True
@@ -45,34 +45,6 @@ class LineRider(nn.Module):
                 nn.Flatten(),
                 nn.Linear(in_features=4*128, out_features=2)
             )
-
-            # # in: [N, 3, 32, 32] -> out: [N, 8]
-            # self.model_end = nn.Sequential(
-            #     nn.Conv2d(in_channels=3, out_channels=32, kernel_size=(5, 3), stride=(2, 1)),
-            #     nn.ReLU(),
-            #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(5, 3), stride=(2, 1)),
-            #     nn.ReLU(),
-            #     nn.AvgPool2d(kernel_size=(1, 14)),
-            #     nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(1, 2)),
-            #     nn.ReLU(),
-            #     nn.Flatten(),
-            #     nn.Linear(in_features=5 * 64, out_features=2)
-            # )
-            # self.model_end = nn.Sequential(
-            #     nn.Conv2d(in_channels=3, out_channels=32, kernel_size=(3, 3), padding=(0, 1)),
-            #     nn.ReLU(),
-            #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(3, 3), padding=(0, 1)),  # , stride=(1, 1)),
-            #     nn.ReLU(),
-            #     nn.MaxPool2d(kernel_size=3),
-            #     nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3, 3), padding=(0, 1)),  # , stride=(1, 1)),
-            #     nn.ReLU(),
-            #     nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3, 3), padding=(0, 1)),  # , stride=(1, 1)),
-            #     nn.ReLU(),
-            #     nn.AvgPool2d(kernel_size=(3, 3)),
-            #     nn.Flatten(),
-            #     nn.Linear(in_features=3 * 64, out_features=2)
-            # )
-            #################
             self.model_end = nn.Sequential(
                 nn.Conv2d(in_channels=3, out_channels=32, kernel_size=(3, 3), padding=(0, 1)),
                 nn.ReLU(),
@@ -88,9 +60,9 @@ class LineRider(nn.Module):
                 nn.Flatten(),
                 nn.Linear(in_features=10 * 128, out_features=2)
             )
-            ###################
+
         elif input_size == 48:
-            self.model_line = nn.Sequential(  # TODO: use different activation functions (elu, selu, ...)
+            self.model_line = nn.Sequential(
                 nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
                 nn.ReLU(),
                 nn.Conv2d(in_channels=16, out_channels=32, kernel_size=5, padding=1),
@@ -127,28 +99,6 @@ class LineRider(nn.Module):
                 nn.Linear(in_features=16 * 128, out_features=2)
             )
         elif input_size == 60:
-            print('## Line Rider: input size 64')
-            # in: [N, 3, 60, 60] -> out: [N, 8]
-            # self.model_line = nn.Sequential(
-            #     nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3),
-            #     nn.ReLU(),
-            #     nn.MaxPool2d(kernel_size=2),
-            #     nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=2),
-            #     nn.ReLU(),
-            #     nn.MaxPool2d(kernel_size=2),
-            #     nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3),
-            #     nn.ReLU(),
-            #     nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, padding=2),
-            #     nn.ReLU(),
-            #     nn.MaxPool2d(kernel_size=2),
-            #     nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3),
-            #     nn.ReLU(),
-            #     nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3),
-            #     nn.ReLU(),
-            #     nn.MaxPool2d(kernel_size=2),
-            #     nn.Flatten(),
-            #     nn.Linear(in_features=512, out_features=2)
-            # )
             self.model_line = nn.Sequential(
                 nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3),
                 nn.ReLU(),
@@ -169,7 +119,6 @@ class LineRider(nn.Module):
                 nn.Flatten(),
                 nn.Linear(in_features=128, out_features=2)
             )
-
             self.model_end = nn.Sequential(
                 nn.Conv2d(in_channels=3, out_channels=32, kernel_size=(5, 3)),
                 nn.ReLU(),
@@ -197,11 +146,9 @@ class LineRider(nn.Module):
         :return:        A tuple containing the output and the hidden state both as a torch tensor
         """
         out = self.model_line(x)
-        # out = self.lin_out(cnn_out)
 
         sina = nn.Tanh()(out[:, 0])
         cosa = nn.Tanh()(out[:, 1])
-        # angle = nn.Tanh()(out[:, 2])*math.pi/2
 
         return torch.cat([sina, cosa], dim=0)
 
@@ -215,12 +162,45 @@ class LineRider(nn.Module):
         :return:        A tuple containing the output and the hidden state both as a torch tensor
         """
         out = self.model_end(x)
-        # out = self.lin_out_end(cnn_out)
 
         bl_end = nn.Sigmoid()(out[:, 0])
-        bl_end_length = nn.Sigmoid()(out[:, 1])
+        bl_end_length = out[:, 1]#nn.Sigmoid()(out[:, 1])
 
         return torch.cat([bl_end, bl_end_length], dim=0)
+
+    def extract_window(self, x, y, cosa, sina, img_w, img_h, w_box, scale_x, scale_y, size, img):
+        # grid_sample expects grid coordinates scaled to [-1,1]. This means that (-1,-1) is the top left corner and
+        # (1,1) is the bottom right corner.
+        x_scaled = x / img_w * 2
+        y_scaled = y / img_h * 2
+
+        # The window is taken from the middle of the image:
+        # o Move the top left corner with - (1,1)
+        # o Move to specified point with + (x_scaled, y_scaled)
+        # o move such that the start point is in the middle of the right border with
+        #   + (cos(angle) * w_box, -sin(angle) * w_box) + (0, -h_box/4)
+        # // This assumes that the image is squared, otherwise the hypotenuse is not exactly w_box/2
+        x_s = -1.0 + x_scaled + w_box / 2 * cosa
+        y_s = -1.0 + y_scaled - w_box / 2 * sina  # - h_box/4 #TODO: leave or comment out?
+        # x_s = -1.0 + x_scaled + w_box / 2 * torch.cos(alpha)
+        # y_s = -1.0 + y_scaled - w_box / 2 * torch.sin(alpha)# - h_box/4 #TODO: leave or comment out?
+
+        # Theta describes an affine transformation and has the form
+        # ( A_11, A_12, x_s)
+        # ( A_21. A_22. y_s)
+        # where A is the product of a rotation matrix and a scaling matrix and x_s, y_s describe the translation.
+        # The angle is set to -alpha because the rotation of the original image must be reversed.
+        theta_rot = torch.tensor(
+            [[cosa, sina, x_s], [-sina, cosa, y_s], [0, 0, 1]]).float()
+        # theta_rot = torch.tensor(
+        #     [[torch.cos(-alpha), -torch.sin(-alpha), x_s], [torch.sin(-alpha), torch.cos(-alpha), y_s], [0, 0, 1]])
+        theta_scale = torch.tensor([[scale_x, 0, 0], [0, scale_y, 0], [0, 0, 1]]).float()
+        theta = torch.mm(theta_rot, theta_scale)[0:2].unsqueeze(0).float()
+
+        agrid = torch.nn.functional.affine_grid(theta, size).to(self.device)
+        img_patch = torch.nn.functional.grid_sample(img, agrid, mode='nearest', padding_mode='zeros')
+
+        return img_patch
 
     def forward(self, img, box_size, sp=None, ep=None, angle_0=None, baseline=None, reset_idx: int = 4):
         """
@@ -244,8 +224,6 @@ class LineRider(nn.Module):
 
         if baseline is not None:
             mode = 'baseline'
-        elif ep is not None:
-            mode = 'sp_ep'
         else:
             mode = 'sp'
 
@@ -254,15 +232,6 @@ class LineRider(nn.Module):
             x = x.to(self.device)
             y = y.to(self.device)
             angle = angle.to(self.device)
-
-            sp = torch.tensor([x, y]).to(self.device)
-            ep = torch.tensor([baseline[-1, 0], baseline[-1, 1]]).to(self.device)
-        elif mode == 'sp_ep':
-            x = sp[0]
-            y = sp[1]
-            angle = angle_0
-
-            max_dist = torch.sqrt(torch.pow(sp[0]-ep[0], 2) + torch.pow(sp[0]-ep[0], 2))
         elif mode == 'sp':
             x = sp[0]
             y = sp[1]
@@ -310,17 +279,8 @@ class LineRider(nn.Module):
             # Necessary to make sure one segment baselines are also handled correctly and
             # to ensure bL_end is set in case of the 'sp' case.
             if first_loop:
-                x_scaled = x / img_w * 2
-                y_scaled = y / img_h * 2
-                x_s = -1.0 + x_scaled + w_box / 2 * cosa
-                y_s = -1.0 + y_scaled - w_box / 2 * sina
-                theta_rot = torch.tensor(
-                    [[cosa, sina, x_s], [-sina, cosa, y_s], [0, 0, 1]])
-                theta_scale = torch.tensor([[scale_x, 0, 0], [0, scale_y, 0], [0, 0, 1]])
-                theta = torch.mm(theta_rot, theta_scale)[0:2].unsqueeze(0).float()
-
-                agrid = torch.nn.functional.affine_grid(theta, size).to(self.device)
-                img_patch = torch.nn.functional.grid_sample(img, agrid, mode='nearest', padding_mode='zeros')
+                img_patch = self.extract_window(x, y, cosa, sina, img_w, img_h, w_box, scale_x, scale_y, size, img)
+                patches.append(img_patch)
                 out_end = self.rider_end(img_patch.detach().requires_grad_())
 
                 # Write bl_end output to predicted label
@@ -335,10 +295,9 @@ class LineRider(nn.Module):
             if mode == 'sp':
                 # if bl_end > 0.8 the network predicted the end of the baseline.
                 # The value of bl_end_length is then the quotient of box_size and the length of the final baseline segment.
-                if bl_end > 0.5:
+                if bl_end > 0.7:
                     x = x + step_size * cosa * bl_end_length
                     y = y - step_size * sina * bl_end_length
-
                     x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
                     y_list = torch.cat([y_list, y.unsqueeze(0)], dim=0)
 
@@ -390,36 +349,8 @@ class LineRider(nn.Module):
                         print('ERROR! This message should not be reached!')
                         break
 
-            # grid_sample expects grid coordinates scaled to [-1,1]. This means that (-1,-1) is the top left corner and
-            # (1,1) is the bottom right corner.
-            x_scaled = x / img_w * 2
-            y_scaled = y / img_h * 2
-
-            # The window is taken from the middle of the image:
-            # o Move the top left corner with - (1,1)
-            # o Move to specified point with + (x_scaled, y_scaled)
-            # o move such that the start point is in the middle of the right border with
-            #   + (cos(angle) * w_box, -sin(angle) * w_box) + (0, -h_box/4)
-            # // This assumes that the image is squared, otherwise the hypotenuse is not exactly w_box/2
-            x_s = -1.0 + x_scaled + w_box / 2 * cosa
-            y_s = -1.0 + y_scaled - w_box / 2 * sina# - h_box/4 #TODO: leave or comment out?
-            # x_s = -1.0 + x_scaled + w_box / 2 * torch.cos(alpha)
-            # y_s = -1.0 + y_scaled - w_box / 2 * torch.sin(alpha)# - h_box/4 #TODO: leave or comment out?
-
-            # Theta describes an affine transformation and has the form
-            # ( A_11, A_12, x_s)
-            # ( A_21. A_22. y_s)
-            # where A is the product of a rotation matrix and a scaling matrix and x_s, y_s describe the translation.
-            # The angle is set to -alpha because the rotation of the original image must be reversed.
-            theta_rot = torch.tensor(
-                [[cosa, sina, x_s], [-sina, cosa, y_s], [0, 0, 1]])
-            # theta_rot = torch.tensor(
-            #     [[torch.cos(-alpha), -torch.sin(-alpha), x_s], [torch.sin(-alpha), torch.cos(-alpha), y_s], [0, 0, 1]])
-            theta_scale = torch.tensor([[scale_x, 0, 0], [0, scale_y, 0], [0, 0, 1]])
-            theta = torch.mm(theta_rot, theta_scale)[0:2].unsqueeze(0).float()
-
-            agrid = torch.nn.functional.affine_grid(theta, size).to(self.device)
-            img_patch = torch.nn.functional.grid_sample(img, agrid, mode='nearest', padding_mode='zeros')
+            # extract image patch
+            img_patch = self.extract_window(x, y, cosa, sina, img_w, img_h, w_box, scale_x, scale_y, size, img)
             patches.append(img_patch)
 
             # Apply model

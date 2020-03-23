@@ -4,6 +4,7 @@ import copy
 import random
 from tqdm import tqdm
 import torch
+import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from ..data.dataset_line_rider import DatasetLineRider, prepare_data_for_loss
 from ..utils.normalize_baselines import normalize_baselines, compute_start_and_angle
@@ -33,7 +34,7 @@ class TrainerLineRider:
         self.epochs = config['epochs']
         self.eval_epoch = config['eval_epoch']
         self.parameters = config['data']
-        self.max_side = config['data']['max_side']
+        self.min_side = config['data']['min_side']
         self.reset_idx = config['reset_idx_start']
 
         self.device = torch.device('cuda:' + str(self.gpu) if torch.cuda.is_available() else 'cpu')
@@ -57,10 +58,15 @@ class TrainerLineRider:
             self.seg_model.eval()
 
         print('\n## Trainer settings:')
-        print('exp name:    {}'.format(self.exp_name))
-        print('gpu:         {}'.format(str(self.gpu)))
-        print('side_length: {}'.format(str(self.max_side)))
-        print('epochs:      {}\n'.format(str(self.epochs)))
+        print('exp name:    {}\n'
+              'lr:          {}\n'
+              'side length: {}\n'
+              'gpu:         {}\n'.format(self.exp_name, self.lr, self.min_side, self.gpu))
+        if self.with_seg:
+            print('with seg:    {}\n'
+                  'seg_gpu:     {}'.format(True, self.seg_device))
+        else:
+            print('with seg:    {}\n'.format(False))
 
     def get_model(self, weights):
         """
@@ -77,8 +83,6 @@ class TrainerLineRider:
 
         model_ft.to(self.device)
         criterion_bl = torch.nn.MSELoss()
-        # criterion_bl = torch.nn.L1Loss()
-        # criterion_bl = L12Loss()
         criterion_end = torch.nn.BCELoss()
         criterion_length = torch.nn.MSELoss()
 
@@ -93,7 +97,7 @@ class TrainerLineRider:
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
 
         # Decay LR by a factor of 'gamma' every 'step_size' epochs
-        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9)#0.8
+        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9)
 
         return [optimizer, exp_lr_scheduler]
 
@@ -127,14 +131,8 @@ class TrainerLineRider:
         :param writer: Tensorboard writer
         :return: A tuple containing the loss and the current step counter.
         """
-        # TODO: x) Compute box_size
-        #       x) Implement data augmentation: vary the baseline a little bit
-        #       o) Test if it is better to compute the loss for the whole document instead of single baselines.
         self.model.train()
         self.model.data_augmentation = True
-
-        # TODO: DELETE:
-        print('LR: {}'.format(get_lr(self.optimizer)))
 
         tensorboard_img_steps = 399
         reset_counter_steps = 399
@@ -148,7 +146,7 @@ class TrainerLineRider:
         # Iterate over data.
         for batch in tqdm(self.dataloaders['train'], dynamic_ncols=True):
             if steps % reset_counter_steps == reset_counter_steps-1:
-                if self.reset_idx < 8: # TODO TODO TODO ???? set back to 4? maybe 8 is too extreme; also extra steps for baseine end training!!
+                if self.reset_idx < 8:
                     self.reset_idx += 1
 
             image = batch['image'].to(self.device)
@@ -160,15 +158,13 @@ class TrainerLineRider:
             if self.with_seg:
                 # seg_image = batch['seg_image'].to(self.seg_device)
                 # with torch.no_grad():
-                #     seg_out = self.seg_model(seg_image)['out'].detach().to(self.device)
+                #     seg_out = nn.Softmax()(self.seg_model(seg_image)['out']).detach().to(self.device)
                 #     seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
                 # image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
 
                 with torch.no_grad():
-                    seg_out = self.seg_model(image.to(self.seg_device))['out'].detach().to(self.device)
+                    seg_out = nn.Softmax()(self.seg_model(image.to(self.seg_device))['out']).detach().to(self.device)
                 image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
-
-
 
             steps += 1
 
@@ -205,6 +201,7 @@ class TrainerLineRider:
                                                                             reset_idx=self.reset_idx)
                     if not c_list.requires_grad:
                         continue
+
                     # Every tensorboard_img_steps steps save the result to tensorboard:
                     if steps % tensorboard_img_steps == tensorboard_img_steps-1:
                         pred_list.append(c_list)
@@ -260,7 +257,6 @@ class TrainerLineRider:
         Validate the model on the validation set. Returns  the loss.
         :return: The loss on the validation set.
         """
-        # TODO: compute box_size
         self.model.eval()
         self.model.data_augmentation = False
 
@@ -283,12 +279,12 @@ class TrainerLineRider:
             if self.with_seg:
                 # seg_image = batch['seg_image'].to(self.seg_device)
                 # with torch.no_grad():
-                #     seg_out = self.seg_model(seg_image)['out'].detach().to(self.device)
+                #     seg_out = nn.Softmax()(self.seg_model(seg_image)['out']).detach().to(self.device)
                 #     seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
                 # image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
 
                 with torch.no_grad():
-                    seg_out = self.seg_model(image.to(self.seg_device))['out'].detach().to(self.device)
+                    seg_out = nn.Softmax()(self.seg_model(image.to(self.seg_device))['out']).detach().to(self.device)
                 image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
 
 
@@ -374,7 +370,6 @@ class TrainerLineRider:
         """
         Tests the model on the test set and prints the results.
         """
-        # TODO: compute box_size
         self.model.eval()
         self.model.data_augmentation = False
 
@@ -397,12 +392,12 @@ class TrainerLineRider:
             if self.with_seg:
                 # seg_image = batch['seg_image'].to(self.seg_device)
                 # with torch.no_grad():
-                #     seg_out = self.seg_model(seg_image)['out'].detach().to(self.device)
+                #     seg_out = nn.Softmax()(self.seg_model(seg_image)['out']).detach().to(self.device)
                 #     seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
                 # image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
 
                 with torch.no_grad():
-                    seg_out = self.seg_model(image.to(self.seg_device))['out'].detach().to(self.device)
+                    seg_out = nn.Softmax()(self.seg_model(image.to(self.seg_device))['out']).detach().to(self.device)
                 image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
 
 

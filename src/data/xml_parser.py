@@ -50,31 +50,6 @@ class XMLParser:
 
         return baselines
 
-
-    # def scale(self, max_side: int):
-    #     """
-    #     For images with at least one side larger than max_side scales the image and polygons
-    #     such that the maximal side length is given by max_side.
-    #     If max_side is larger than the maximum of width and height nothing is done.
-    #     :param max_side: Maximally allowed side length
-    #     """
-    #     if self.scaled:
-    #         return
-    #     elif max(self.width, self.height) > max_side:
-    #         ratio_w = float(max_side) / self.width
-    #         ratio_h = float(max_side) / self.height
-    #         w = self.width
-    #         h = self.height
-    #
-    #         self.width = round(w * ratio_w)
-    #         self.height = round(h * ratio_h)
-    #
-    #         for bl in self.baselines:
-    #             for point in bl:
-    #                 point.scale(ratio_w, ratio_h)
-    #
-    #         self.scaled = True
-
     def scale(self, min_side: int):
         """
         For images with at least one side larger than max_side scales the image and polygons

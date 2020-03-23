@@ -15,7 +15,7 @@
   "random_seed": 42,
   "data": {
     "input_folder": "data/cBAD-ICDAR2019",
-    "max_side": 1024,
+    "min_side": 1024,
     "crop_size": null
   }
 }

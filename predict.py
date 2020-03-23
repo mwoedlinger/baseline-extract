@@ -36,6 +36,7 @@ def predict(config):
     print('## Start prediction:')
     for sample in tqdm.tqdm(dataset):
         img = sample['image']
+        seg_img = sample['seg_image']
         filename = sample['filename']
         width = sample['width']
         height = sample['height']
@@ -43,10 +44,10 @@ def predict(config):
         if config['line_finder']['use_GT_sp_and_angles']:
             sp = sample['start_points']
             angles = sample['angles']
-            baselines = detector.extract_baselines(img, sp, angles,
+            baselines = detector.extract_baselines(img, seg_img, sp, angles,
                                                    with_segmentation=config['line_rider']['with_segmentation'])
         else:
-            baselines = detector.extract_baselines(img)
+            baselines = detector.extract_baselines(img, seg_img)
         bl_string = create_prediction_string(baselines, width, height, config['data']['img_size'])
 
         text_name = os.path.basename(filename).split('.')[0]+'.txt'

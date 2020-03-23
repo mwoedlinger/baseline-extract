@@ -14,13 +14,13 @@ class DatasetInference(Dataset):
         self.GT_sp = get_GT_start_points
         self.images, self.xml_files = self.list_files()
         self.img_size = img_size
-        # self.transforms = transforms.Compose([transforms.Resize((self.img_size, self.img_size),
-        #                                                         interpolation=PIL.Image.NEAREST),
-        #                                       transforms.Grayscale(num_output_channels=3),
-        #                                       transforms.ToTensor(),
-        #                                       transforms.Normalize(mean=[0.6784], std=[0.2092])
-        #                                       ])
-        self.transforms = transforms.Compose([transforms.Resize(self.img_size,
+        self.transforms = transforms.Compose([transforms.Resize((self.img_size, self.img_size),
+                                                                interpolation=PIL.Image.NEAREST),
+                                              transforms.Grayscale(num_output_channels=3),
+                                              transforms.ToTensor(),
+                                              transforms.Normalize(mean=[0.6784], std=[0.2092])
+                                              ])
+        self.seg_transforms = transforms.Compose([transforms.Resize(self.img_size,
                                                                 interpolation=PIL.Image.NEAREST),
                                               transforms.Grayscale(num_output_channels=3),
                                               transforms.ToTensor(),
@@ -36,7 +36,6 @@ class DatasetInference(Dataset):
         width, height = image.size
         #print('w: {}, h: {}. A = {}'.format(width/1000.0, height/1000.0, width*height/1000000.0))
 
-        image = self.transforms(image)
 
         if self.GT_sp:
             parser = XMLParserInference(self.xml_files[idx])
@@ -54,14 +53,16 @@ class DatasetInference(Dataset):
                 angles.append(angle)
 
 
-            sample = {'image': image,
+            sample = {'image': self.transforms(image),
+                      'seg_image': self.seg_transforms(image),
                       'filename': self.images[idx],
                       'width': width,
                       'height': height,
                       'start_points': torch.tensor(start_points),
                       'angles': torch.tensor(angles)}
         else:
-            sample = {'image': image,
+            sample = {'image': self.transforms(image),
+                      'seg_image': self.seg_transforms(image),
                       'filename': self.images[idx],
                       'width': width,
                       'height': height}
@@ -81,6 +82,6 @@ class DatasetInference(Dataset):
         basename_list = [os.path.basename(f).split('.')[0] for f in xml_list]
         image_list = [os.path.join(self.input_folder, f+'.jpg') for f in basename_list]
 
-        return image_list, xml_list
+        return image_list[0:10], xml_list[0:10]
 
 

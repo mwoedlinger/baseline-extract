@@ -74,11 +74,11 @@ class TrainerLineFinder:
         Get the optimizer and scheduler.
         :return: a list containing the optimizer and the scheduler
         """
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        # optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
+        # optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
 
         # Decay LR by a factor of 'gamma' every 'step_size' epochs
-        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)#20, 0.5#30
+        exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)#20, 0.5#30
 
         return [optimizer, exp_lr_scheduler]
 
@@ -114,7 +114,7 @@ class TrainerLineFinder:
         """
         self.model.train()
 
-        tensorboard_img_steps = 51
+        tensorboard_img_steps = 47
 
         running_loss = 0
         running_loc_loss = 0

@@ -1,21 +1,21 @@
 {
-  "exp_name": "new",
+  "exp_name": "lf_1903",
   "log_dir": "tensorboard",
   "output_folder": "trained_models",
-  "gpu": 2,
-  "lr": 4e-5,
+  "gpu": 3,
+  "lr": 4e-2,
   "batch_size": 16,
   "epochs": 60,
   "eval_epoch": 5,
   "reset_idx_start": null,
   "segmentation": {
-    "segmentation_gpu": 2,
+    "segmentation_gpu": 3,
     "segmentation_weights": null,
     "segmentation_classes": 6
   },
   "data": {
     "input_folder": "data/cBAD-ICDAR2019",
-    "max_side": 300,
-    "crop_size": 256
+    "max_side": 512,
+    "crop_size": 384
   }
 }

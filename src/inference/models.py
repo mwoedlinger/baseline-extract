@@ -1,12 +1,17 @@
 import numpy as np
 import cv2
 import torch
+import torch.nn as nn
 import math
 from torchvision import models
 from ..segmentation.gcn_model import GCN
 from ..utils.distances import get_smallest_distance, get_median_diff
 from ..utils.utils import load_class_dict
 from ..utils.normalize_baselines import compute_start_and_angle
+
+
+def d2_np(u, v):
+    return np.sqrt((u[0] - v[0]) ** 2 + (u[1] - v[1]) ** 2)
 
 
 def is_in_box(point, left, top, width, height):
@@ -49,16 +54,80 @@ def contains_start_point(points, bl_stats):
     return comp_contains_sp
 
 
+def get_cc_array(stats, area_thresh=100):
+    cc_array = np.zeros((len(stats), 4, 2))
+
+    for n, cc in enumerate(stats):
+        if cc[2] * cc[3] < area_thresh:
+            top_left = -10000
+            top_right = -10000
+            bottom_left = -10000
+            bottom_right = -10000
+        else:
+            top_left = np.array([cc[0], cc[1]])
+            top_right = np.array([cc[0] + cc[2], cc[1]])
+            bottom_left = np.array([cc[0], cc[1] + cc[3]])
+            bottom_right = np.array([cc[0] + cc[2], cc[1] + cc[3]])
+
+        cc_array[n, 0, :] = top_left
+        cc_array[n, 1, :] = top_right
+        cc_array[n, 2, :] = bottom_left
+        cc_array[n, 3, :] = bottom_right
+
+    return cc_array
+
+
+def get_angles(cc_array, start_points):
+    dist_array = -np.ones(cc_array.shape[0:2])  # The minus is for debug
+    angles = np.zeros(len(start_points))
+
+    for sp_idx, p in enumerate(start_points):
+        for n in range(cc_array.shape[0]):
+            for k in range(0, 4):
+                dist_array[n, k] = d2_np(p, cc_array[n, k, :])
+
+        cc_idx, p_idx = np.unravel_index(np.argmin(dist_array, axis=None), dist_array.shape)
+
+        if np.min(dist_array) < 0:
+            print('something went wrong!')
+            return 0
+
+        bb_w = (cc_array[cc_idx, 1, 0] - cc_array[cc_idx, 0, 0])
+        bb_h = (cc_array[cc_idx, 2, 1] - cc_array[cc_idx, 0, 1])
+
+        if p_idx == 0:  # top_left
+            angle = np.arctan(-bb_h / bb_w)
+        elif p_idx == 1:  # top_right
+            angle = np.arctan(-bb_w / bb_h) - np.pi / 2.0
+        elif p_idx == 2:  # bottom_left
+            angle = np.arctan(bb_h / bb_w)
+        elif p_idx == 3:  # bottom_right
+            angle = np.arctan(bb_w / bb_h) + np.pi / 2.0
+        else:
+            print('p_idx = {}'.format(p_idx))
+
+        if np.pi * 0.75 < abs(angle) < np.pi * 1.25:
+            print('angle {} reset to 0 for point {}'.format(angle, sp_idx))
+            angle = 0
+
+        angles[sp_idx] = angle
+
+    return angles
+
+
 class LineDetector:
     """
     Loads the line rider model for inference.
     """
+
     def __init__(self, config: dict):
         self.config = config
         line_rider_weights = config['line_rider']['weights']
         line_finder_weights = config['line_finder']['weights']
-        self.device_lr = torch.device('cuda:' + str(config['line_rider']['device']) if torch.cuda.is_available() else 'cpu')
-        self.device_lf = torch.device('cuda:' + str(config['line_finder']['device']) if torch.cuda.is_available() else 'cpu')
+        self.device_lr = torch.device(
+            'cuda:' + str(config['line_rider']['device']) if torch.cuda.is_available() else 'cpu')
+        self.device_lf = torch.device(
+            'cuda:' + str(config['line_finder']['device']) if torch.cuda.is_available() else 'cpu')
         self.classes, self.colors, self.class_dict = load_class_dict(config['line_finder']['class_file'])
         self.model = config['line_finder']['model']
         self.backbone = config['line_finder']['backbone']
@@ -70,6 +139,7 @@ class LineDetector:
         print('## Load Line Rider:')
         self.line_rider = self.load_line_rider_model(line_rider_weights, self.device_lr)
         if config['line_rider']['with_segmentation']:
+            self.classes, _, _ = load_class_dict(config['line_finder']['class_file'])
             print('## Load Line Finder:')
             self.line_finder_seg = self.load_line_finder_model(line_finder_weights, self.device_lf, )
             print('## Loaded!')
@@ -94,14 +164,14 @@ class LineDetector:
         return seg_model
 
     @staticmethod
-    def segmentation_postprocessing(array: np.array, sigma, threshold, morph_close_size, erode_size):
+    def segmentation_postprocessing(array: np.array, sigma, threshold, open_kernel):
         """
         Applies post processing steps to the segmentation output to better extract the start points.
         """
-        out = cv2.GaussianBlur(array, (int(3 * sigma) * 2 + 1, int(3 * sigma) * 2 + 1), sigma)
-        out = (out > threshold) * 1.0
-        out = cv2.morphologyEx(out, cv2.MORPH_CLOSE, (morph_close_size, morph_close_size))
-        out = cv2.erode(out, (erode_size, erode_size), iterations=1)
+        seg_blur = cv2.GaussianBlur(array, (int(3 * sigma) * 2 + 1, int(3 * sigma) * 2 + 1), sigma)
+        seg_thresh = (seg_blur > threshold) * 1.0
+        seg_open = cv2.morphologyEx(seg_thresh, cv2.MORPH_OPEN, (open_kernel, open_kernel))
+        out = seg_open
 
         return out
 
@@ -113,38 +183,38 @@ class LineDetector:
         """
         segmentation = np.transpose(seg[0], (1, 2, 0))
 
-        probs_start_points = segmentation[:, :, self.class_idx['start_points']]
-        probs_end_points = segmentation[:, :, self.class_idx['end_points']]
+        probs_start_points = segmentation[:, :, self.class_idx['end_points']]  # TODO: carefull
+        probs_end_points = segmentation[:, :, self.class_idx['start_points']]  # TODO: carefull
         probs_baselines = segmentation[:, :, self.class_idx['baselines']]
-        probs_border = segmentation[:, :, self.class_idx['baseline_border']]
+        probs_border = segmentation[:, :, self.class_idx['text']]
 
         # Apply postprocessing:
         # Postprozessing parameters
         sigma = 0.3
-        threshold = 0.99
-        morph_close_size = 3
-        erode_size = 3
+        threshold = 0.5
+        threshold_sp = 0.3
+        open_kernel = 3
 
         # Extract baselines
-        bl = self.segmentation_postprocessing(probs_baselines, sigma, threshold, morph_close_size, erode_size)
+        bl = self.segmentation_postprocessing(probs_baselines, sigma, threshold, open_kernel)
         _, bl_labels, bl_stats, bl_centroids = cv2.connectedComponentsWithStats(bl.astype(np.uint8))
 
         # Extract baseline_borders
-        border = self.segmentation_postprocessing(probs_border, sigma, threshold, morph_close_size, erode_size)
+        border = self.segmentation_postprocessing(probs_border, sigma, threshold, open_kernel)
         _, border_labels, _, _ = cv2.connectedComponentsWithStats(border.astype(np.uint8))
 
         # Extract start points
-        sp = self.segmentation_postprocessing(probs_start_points, sigma, threshold, morph_close_size, erode_size)
+        sp = self.segmentation_postprocessing(probs_start_points, sigma, threshold_sp, open_kernel)
         _, _, _, start_points = cv2.connectedComponentsWithStats(sp.astype(np.uint8))
 
         # Extract end points
-        ep = self.segmentation_postprocessing(probs_end_points, sigma, threshold, morph_close_size, erode_size)
+        ep = self.segmentation_postprocessing(probs_end_points, sigma, threshold, open_kernel)
         _, _, _, end_points = cv2.connectedComponentsWithStats(ep.astype(np.uint8))
 
         # Compute the angles and match start and end points
-        probs_sum = probs_start_points + probs_end_points + probs_baselines
+        probs_sum = probs_start_points + probs_end_points + probs_baselines + 0.5 * probs_border  # ?
         ps = cv2.GaussianBlur(probs_sum, (int(3 * sigma) * 2 + 1, int(3 * sigma) * 2 + 1), sigma)
-        ps = (ps > threshold) * 1.0
+        ps = (ps > 0.5) * 1.0
         ps = cv2.morphologyEx(ps, cv2.MORPH_OPEN, (3, 3))
         # TODO: remove start points that don't connect to a baseline
         _, labels, stats, _ = cv2.connectedComponentsWithStats(ps.astype(np.uint8))
@@ -159,10 +229,16 @@ class LineDetector:
         ep_labels = {labels[(int(p[1]), int(p[0]))]: p for p in end_points[1:]}
 
         label_list = sp_labels.keys()
-        angles = {l: np.arctan(stats[l][3] / stats[l][2]) for l in label_list}
+        cc_array = get_cc_array(stats)
+        angles_list = get_angles(cc_array, start_points[1:])
+
+        angles = {labels[(int(start_points[n + 1][1]), int(start_points[n + 1][0]))]: angles_list[n] for n in
+                  range(len(angles_list))}
+        # angles = {l: np.arctan(stats[l][3] / stats[l][2]) for l in label_list}
 
         bl_out_truth = contains_start_point(start_points, bl_stats)
 
+        #####################################################################################
         if self.auto_generate_start_points:
             # Generate new start points where the prediction faled
             new_sp = []
@@ -191,10 +267,10 @@ class LineDetector:
 
                         for x in range(left, left + width):
                             if bl_labels[top + 10, x] == n:
-                                y_direction = -1
+                                y_direction = 1  # -1
                                 break
                             elif border_labels[top + 10, x] != 0:
-                                y_direction = 1
+                                y_direction = -1  # -1
                                 break
 
                         if y_direction < 0:  # from bottom up
@@ -239,33 +315,54 @@ class LineDetector:
 
             sp_labels.update(new_sp_dict)
             angles.update(new_angle_dict)
+        #####################################################################################
 
         return sp_labels, ep_labels, angles, label_list
 
-    def extract_baselines(self, image: torch.tensor, start_points=None, angles=None, with_segmentation=False):
+    def extract_baselines(self, image: torch.tensor, image_seg_in, start_points=None, angles=None,
+                          with_segmentation=False):
         image = image.unsqueeze(0).to(self.device_lf)
+        image_seg_in = image_seg_in.unsqueeze(0).to(self.device_lf)
 
         with torch.no_grad():
             # if baselines is None extract the start points and angles from the segmentation
             if start_points is None:
-                seg_out = self.line_finder_seg(image)['out']
 
-                # image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
-                image_seg = torch.cat(
-                    [image[:, 0:1, :, :], seg_out[:, 0:1, :, :], seg_out[:, 1:2, :, :] + seg_out[:, 2:3, :, :]],
-                    dim=1).detach()
+                seg_out = self.line_finder_seg(image_seg_in)['out'].detach()
+                # seg_out = nn.Sigmoid()(self.line_finder_seg(image_seg_in)['out']).detach()
+                seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
+                image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'),
+                                                                        self.classes.index('baselines')], :, :]],
+                                      dim=1).detach()
 
+                # seg_out = self.line_finder_seg(image)['out']
+                #
+                # # image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
+                # image_seg = torch.cat(
+                #     [image[:, 0:1, :, :], seg_out[:, 0:1, :, :], seg_out[:, 1:2, :, :] + seg_out[:, 2:3, :, :]],
+                #     dim=1).detach()
+
+                seg_out = nn.Softmax()(seg_out)
                 start_points, end_points, angles, label_list = self.extract_start_points_and_angles(
                     seg_out.cpu().detach().numpy())
+                return start_points, end_points, angles, label_list
                 sp_values = torch.tensor(list(start_points.values())).to(self.device_lr)
             else:
                 if with_segmentation:
-                    seg_out = self.line_finder_seg(image)['out']
+                    seg_out = self.line_finder_seg(image_seg_in)['out'].detach()
+                    # seg_out = nn.Sigmoid()(self.line_finder_seg(image_seg_in)['out']).detach()
+                    seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
+                    image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'),
+                                                                            self.classes.index('baselines')], :, :]],
+                                          dim=1).detach()
 
-                    # image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
-                    image_seg = torch.cat(
-                        [image[:, 0:1, :, :], seg_out[:, 0:1, :, :], seg_out[:, 1:2, :, :] + seg_out[:, 2:3, :, :]],
-                        dim=1).detach()
+                    # seg_out
+                    # seg_out = self.line_finder_seg(image)['out']
+                    #
+                    # # image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, [0, 1], :, :]], dim=1).detach()
+                    # image_seg = torch.cat(
+                    #     [image[:, 0:1, :, :], seg_out[:, 0:1, :, :], seg_out[:, 1:2, :, :] + seg_out[:, 2:3, :, :]],
+                    #     dim=1).detach()
 
                 label_list = list(range(0, len(start_points)))
                 # start_points = {l: start_points_list[l] for l in label_list}
@@ -282,7 +379,7 @@ class LineDetector:
 
                 # Compute box size
                 box_size = int(get_smallest_distance(sp, sp_values))
-                box_size = max(10, min(48, box_size))
+                box_size = max(10, min(50, box_size))
                 if box_size == 0:
                     box_size = min(10, max(32, get_median_diff(start_points) / 2.0))
 
