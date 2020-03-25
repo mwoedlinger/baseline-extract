@@ -1,6 +1,6 @@
 {
   "line_rider": {
-    "weights": "trained_models/line_rider/line_rider_v32_31_seg.pt",
+    "weights": "trained_models/line_rider/line_rider_v34_32_with_seg.pt",
     "with_segmentation": true,
     "device": 3
   },
@@ -14,7 +14,7 @@
     "backbone": 50
   },
   "random_seed": 42,
-  "output_folder": "data/test_out",
+  "output_folder": "data/test_out_2",
   "data": {
     "input_folder": "data/cBAD-ICDAR2019/test",
     "img_size": 1024

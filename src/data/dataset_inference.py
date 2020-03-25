@@ -82,6 +82,6 @@ class DatasetInference(Dataset):
         basename_list = [os.path.basename(f).split('.')[0] for f in xml_list]
         image_list = [os.path.join(self.input_folder, f+'.jpg') for f in basename_list]
 
-        return image_list[0:10], xml_list[0:10]
+        return image_list, xml_list
 
 

@@ -156,15 +156,16 @@ class TrainerLineRider:
             # if self.with_seg is true the model performs a segmentation and uses the segmentation information
             # for computing the baselines.
             if self.with_seg:
-                # seg_image = batch['seg_image'].to(self.seg_device)
-                # with torch.no_grad():
-                #     seg_out = nn.Softmax()(self.seg_model(seg_image)['out']).detach().to(self.device)
-                #     seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
-                # image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
-
+                seg_image = batch['seg_image'].to(self.seg_device)
                 with torch.no_grad():
-                    seg_out = nn.Softmax()(self.seg_model(image.to(self.seg_device))['out']).detach().to(self.device)
-                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
+                    seg_out = nn.Softmax()(self.seg_model(seg_image)['out']).detach().to(self.device)
+                    seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
+                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'),
+                                                                    self.classes.index('baselines')], :, :]], dim=1).detach()
+
+                # with torch.no_grad():
+                #     seg_out = nn.Softmax()(self.seg_model(image.to(self.seg_device))['out']).detach().to(self.device)
+                # image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
 
             steps += 1
 
@@ -188,7 +189,7 @@ class TrainerLineRider:
 
                     # Compute box size
                     box_size = int(get_smallest_distance(start_points[n], start_points))
-                    box_size = max(10, min(80, box_size)) + random.randint(-3, 10)#48
+                    box_size = max(10, min(50, box_size)) + random.randint(-3, 10)#48
                     # +5: Larger box sizes are more difficult => regularization
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
@@ -277,15 +278,15 @@ class TrainerLineRider:
             # if self.with_seg is true the model performs a segmentation and uses the segmentation information
             # for computing the baselines.
             if self.with_seg:
-                # seg_image = batch['seg_image'].to(self.seg_device)
-                # with torch.no_grad():
-                #     seg_out = nn.Softmax()(self.seg_model(seg_image)['out']).detach().to(self.device)
-                #     seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
-                # image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
-
+                seg_image = batch['seg_image'].to(self.seg_device)
                 with torch.no_grad():
-                    seg_out = nn.Softmax()(self.seg_model(image.to(self.seg_device))['out']).detach().to(self.device)
+                    seg_out = nn.Softmax()(self.seg_model(seg_image)['out']).detach().to(self.device)
+                    seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
                 image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
+
+                # with torch.no_grad():
+                #     seg_out = nn.Softmax()(self.seg_model(image.to(self.seg_device))['out']).detach().to(self.device)
+                # image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
 
 
 
@@ -306,7 +307,7 @@ class TrainerLineRider:
                 for n in range(number_of_baselines):
                     # Compute box size
                     box_size = int(get_smallest_distance(start_points[n], start_points))
-                    box_size = max(10, min(80, box_size))
+                    box_size = max(10, min(50, box_size))
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]
@@ -390,15 +391,15 @@ class TrainerLineRider:
             # for computing the baselines.
 
             if self.with_seg:
-                # seg_image = batch['seg_image'].to(self.seg_device)
-                # with torch.no_grad():
-                #     seg_out = nn.Softmax()(self.seg_model(seg_image)['out']).detach().to(self.device)
-                #     seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
-                # image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
-
+                seg_image = batch['seg_image'].to(self.seg_device)
                 with torch.no_grad():
-                    seg_out = nn.Softmax()(self.seg_model(image.to(self.seg_device))['out']).detach().to(self.device)
+                    seg_out = nn.Softmax()(self.seg_model(seg_image)['out']).detach().to(self.device)
+                    seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
                 image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
+
+                # with torch.no_grad():
+                #     seg_out = nn.Softmax()(self.seg_model(image.to(self.seg_device))['out']).detach().to(self.device)
+                # image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
 
 
             # Compute the number of baselines. The baselines are padded with [-1] and [-1,-1].
@@ -415,7 +416,7 @@ class TrainerLineRider:
                 for n in range(number_of_baselines):
                     # Compute box size
                     box_size = int(get_smallest_distance(start_points[n], start_points))
-                    box_size = max(10, min(80, box_size))
+                    box_size = max(10, min(50, box_size))
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]

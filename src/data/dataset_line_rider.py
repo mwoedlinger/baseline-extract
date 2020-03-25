@@ -60,8 +60,15 @@ class DatasetLineRider(Dataset):
         self.input_folder = os.path.join(parameters['input_folder'], inf_type)
         self.inf_type = inf_type
         self.images, self.labels = self.list_files()
-        self.min_side = parameters['max_side']
-        self.transforms = transforms.Compose([transforms.Resize(self.min_side, #self.min_side),
+        self.min_side = parameters['min_side']
+        self.transforms = transforms.Compose([transforms.Resize((self.min_side, self.min_side),
+                                                                interpolation=PIL.Image.NEAREST),
+                                              transforms.Grayscale(num_output_channels=3),
+                                              transforms.ToTensor(),
+                                              transforms.Normalize(mean=[0.7219, 0.6874, 0.6260],
+                                                                   std=[0.2174, 0.2115, 0.1989])
+                                              ])
+        self.seg_transforms = transforms.Compose([transforms.Resize(self.min_side, #self.max_side),
                                                                 interpolation=PIL.Image.NEAREST),
                                               transforms.Grayscale(num_output_channels=3),
                                               transforms.ToTensor(),
@@ -82,6 +89,7 @@ class DatasetLineRider(Dataset):
         parser = XMLParser(self.labels[idx])
         parser.scale(self.min_side)
         baselines = parser.get_baselines()
+        #TODO: add data augmentation: negative colors? also add segmentation!
 
         baselines = [[p.get_as_list() for p in bl] for bl in baselines]
         # bl_length is a list that contains the length of every baseline. This will be returned to make it
@@ -100,6 +108,7 @@ class DatasetLineRider(Dataset):
         #     image = PIL.ImageOps.invert(image)
 
         sample = {'image': self.transforms(image),
+                  'seg_image': self.seg_transforms(image),
                   'baselines': torch.tensor(baselines_padded),
                   'bl_lengths': torch.tensor(bl_lengths_padded)}
 

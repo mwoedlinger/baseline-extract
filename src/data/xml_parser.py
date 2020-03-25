@@ -50,28 +50,52 @@ class XMLParser:
 
         return baselines
 
-    def scale(self, min_side: int):
+    def scale(self, max_side: int):
         """
         For images with at least one side larger than max_side scales the image and polygons
-        such that the minimal side length is given by max_side.
+        such that the maximal side length is given by max_side.
         If max_side is larger than the maximum of width and height nothing is done.
         :param max_side: Maximally allowed side length
         """
         if self.scaled:
             return
-        else:
-            ratio = min_side / min(self.width, self.height)
+        elif max(self.width, self.height) > max_side:
+            ratio_w = float(max_side) / self.width
+            ratio_h = float(max_side) / self.height
             w = self.width
             h = self.height
 
-            self.width = min_side if w < h else round(w * ratio)
-            self.height = min_side if h < w else round(h * ratio)
+            self.width = round(w * ratio_w)
+            self.height = round(h * ratio_h)
 
-            for region in self.baselines:
-                for point in region:
-                    point.scale(ratio, ratio)
+            for bl in self.baselines:
+                for point in bl:
+                    point.scale(ratio_w, ratio_h)
 
             self.scaled = True
 
+    # def scale(self, min_side: int):
+    #     """
+    #     For images with at least one side larger than max_side scales the image and polygons
+    #     such that the minimal side length is given by max_side.
+    #     If max_side is larger than the maximum of width and height nothing is done.
+    #     :param max_side: Maximally allowed side length
+    #     """
+    #     if self.scaled:
+    #         return
+    #     else:
+    #         ratio = min_side / min(self.width, self.height)
+    #         w = self.width
+    #         h = self.height
+    #
+    #         self.width = min_side if w < h else round(w * ratio)
+    #         self.height = min_side if h < w else round(h * ratio)
+    #
+    #         for region in self.baselines:
+    #             for point in region:
+    #                 point.scale(ratio, ratio)
+    #
+    #         self.scaled = True
+    #
     def get_baselines(self):
         return self.baselines

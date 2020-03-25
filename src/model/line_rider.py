@@ -228,7 +228,7 @@ class LineRider(nn.Module):
             mode = 'sp'
 
         if mode == 'baseline':
-            x, y, angle = compute_start_and_angle(baseline, 0, data_augmentation=False)#self.data_augmentation)
+            x, y, angle = compute_start_and_angle(baseline, 0, data_augmentation=self.data_augmentation)
             x = x.to(self.device)
             y = y.to(self.device)
             angle = angle.to(self.device)
@@ -295,7 +295,7 @@ class LineRider(nn.Module):
             if mode == 'sp':
                 # if bl_end > 0.8 the network predicted the end of the baseline.
                 # The value of bl_end_length is then the quotient of box_size and the length of the final baseline segment.
-                if bl_end > 0.7:
+                if bl_end > 0.5:
                     x = x + step_size * cosa * bl_end_length
                     y = y - step_size * sina * bl_end_length
                     x_list = torch.cat([x_list, x.unsqueeze(0)], dim=0)
