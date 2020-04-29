@@ -2,116 +2,11 @@ import numpy as np
 import cv2
 import torch
 import torch.nn as nn
-import math
 from torchvision import models
 from ..segmentation.gcn_model import GCN
 from ..utils.distances import get_smallest_distance, get_median_diff
 from ..utils.utils import load_class_dict
-
-
-def d2_np(u, v):
-    return np.sqrt((u[0] - v[0]) ** 2 + (u[1] - v[1]) ** 2)
-
-
-def is_in_box(point, left, top, width, height):
-    x = point[0]
-    y = point[1]
-
-    if left < x < left + width:
-        if top < y < top + height:
-            return True
-
-    return False
-
-
-def contains_start_point(points, bl_stats):
-    comp_contains_sp = []
-    for n, bl_s in enumerate(bl_stats):
-
-        left = bl_s[0]
-        top = bl_s[1]
-        width = bl_s[2]
-        height = bl_s[3]
-
-        if width > height:
-            left -= 5
-            width += 10
-        else:
-            top -= 5
-            height += 10
-
-        contains_sp_switch = False
-        for p in points:
-            if is_in_box(p, left, top, width, height):
-                comp_contains_sp.append(True)
-                contains_sp_switch = True
-                break
-
-        if not contains_sp_switch:
-            comp_contains_sp.append(False)
-
-    return comp_contains_sp
-
-
-def get_cc_array(stats, area_thresh=100):
-    cc_array = np.zeros((len(stats), 4, 2))
-
-    for n, cc in enumerate(stats):
-        if cc[2] * cc[3] < area_thresh:
-            top_left = -10000
-            top_right = -10000
-            bottom_left = -10000
-            bottom_right = -10000
-        else:
-            top_left = np.array([cc[0], cc[1]])
-            top_right = np.array([cc[0] + cc[2], cc[1]])
-            bottom_left = np.array([cc[0], cc[1] + cc[3]])
-            bottom_right = np.array([cc[0] + cc[2], cc[1] + cc[3]])
-
-        cc_array[n, 0, :] = top_left
-        cc_array[n, 1, :] = top_right
-        cc_array[n, 2, :] = bottom_left
-        cc_array[n, 3, :] = bottom_right
-
-    return cc_array
-
-
-def get_angles(cc_array, start_points):
-    dist_array = -np.ones(cc_array.shape[0:2])  # The minus is for debug
-    angles = np.zeros(len(start_points))
-
-    for sp_idx, p in enumerate(start_points):
-        for n in range(cc_array.shape[0]):
-            for k in range(0, 4):
-                dist_array[n, k] = d2_np(p, cc_array[n, k, :])
-
-        cc_idx, p_idx = np.unravel_index(np.argmin(dist_array, axis=None), dist_array.shape)
-
-        if np.min(dist_array) < 0:
-            print('something went wrong!')
-            return 0
-
-        bb_w = (cc_array[cc_idx, 1, 0] - cc_array[cc_idx, 0, 0])
-        bb_h = (cc_array[cc_idx, 2, 1] - cc_array[cc_idx, 0, 1])
-
-        if p_idx == 0:  # top_left
-            angle = np.arctan(-bb_h / bb_w)
-        elif p_idx == 1:  # top_right
-            angle = np.arctan(-bb_w / bb_h) - np.pi / 2.0
-        elif p_idx == 2:  # bottom_left
-            angle = np.arctan(bb_h / bb_w)
-        elif p_idx == 3:  # bottom_right
-            angle = np.arctan(bb_w / bb_h) + np.pi / 2.0
-        else:
-            print('p_idx = {}'.format(p_idx))
-
-        if np.pi * 0.75 < abs(angle) < np.pi * 1.25:
-            #print('angle {} reset to 0 for point {}'.format(angle, sp_idx))
-            angle = 0
-
-        angles[sp_idx] = angle
-
-    return angles
+from .inference_utils import *
 
 
 class LineDetector:
@@ -133,11 +28,10 @@ class LineDetector:
         self.num_classes = len(self.classes)
         self.class_idx = {self.classes[idx]: idx for idx in range(0, self.num_classes)}
         self.backbone = config['line_finder']['backbone']
-        self.auto_generate_start_points = config['line_finder']['auto_generate_start_points']
 
         print('## Load Line Rider:')
         self.line_rider = self.load_line_rider_model(line_rider_weights, self.device_lr)
-        if True:#config['line_rider']['with_segmentation']:
+        if config['line_rider']['with_segmentation']:
             self.classes, _, _ = load_class_dict(config['line_finder']['class_file'])
             print('## Load Line Finder:')
             self.line_finder_seg = self.load_line_finder_model(line_finder_weights, self.device_lf, )
@@ -225,8 +119,6 @@ class LineDetector:
         # Assign labels to the start and end points
         # [1:] because the background is also a component
 
-
-        ###########################
         label_list_tmp = []
         sp_list = []
 
@@ -250,109 +142,6 @@ class LineDetector:
             angles.update({n: angles_list[n]})
             if label_list_tmp[n] in ep_labels_tmp.keys():
                 ep_labels.update({n: ep_labels_tmp[label_list_tmp[n]]})
-        ###########################
-
-
-
-
-        ###########################
-        # sp_labels = {labels[(int(p[1]), int(p[0]))]: p for p in start_points[1:]}
-        # ep_labels = {labels[(int(p[1]), int(p[0]))]: p for p in end_points[1:]}
-        #
-        # label_list = sp_labels.keys()
-        # cc_array = get_cc_array(stats)
-        # angles_list = get_angles(cc_array, start_points[1:])
-        #
-        # angles = {labels[(int(start_points[n + 1][1]), int(start_points[n + 1][0]))]: angles_list[n]
-        #           for n in range(len(angles_list))}
-        ###########################
-
-
-
-
-
-        # angles = {l: np.arctan(stats[l][3] / stats[l][2]) for l in label_list}
-
-        bl_out_truth = contains_start_point(start_points, bl_stats)
-
-        #####################################################################################
-        if self.auto_generate_start_points:
-            # Generate new start points where the prediction faled
-            new_sp = []
-            new_angles = []
-
-            for n, bl_s in enumerate(bl_stats):
-                if not bl_out_truth[n]:
-
-                    left = bl_s[0]
-                    top = bl_s[1]
-                    width = bl_s[2]
-                    height = bl_s[3]
-                    area = bl_s[4]
-
-                    if area < 3000 * self.config['data']['img_size'] / 1024:
-                        continue
-
-                    if width > height:
-                        for y in range(top, top + height):
-                            if bl_labels[y, left + 1] == n:
-                                new_sp.append(np.array([left, y], dtype=np.float64))
-                                new_angles.append(0.0)
-                                break
-                    else:
-                        y_direction = 0
-
-                        for x in range(left, left + width):
-                            if bl_labels[top + 10, x] == n:
-                                y_direction = 1  # -1
-                                break
-                            elif border_labels[top + 10, x] != 0:
-                                y_direction = -1  # -1
-                                break
-
-                        if y_direction < 0:  # from bottom up
-                            for x in range(left, left + width):
-                                if bl_labels[top + height - 1, x] == n:
-                                    new_sp.append(np.array([x, top + height - 1], dtype=np.float64))
-                                    new_angles.append(math.pi / 2)
-                                    break
-                        elif y_direction > 0:  # from up to down
-                            for x in range(left, left + width):
-                                if bl_labels[top + 1, x] == n:
-                                    new_sp.append(np.array([x, top + 1], dtype=np.float64))
-                                    new_angles.append(-math.pi / 2)
-                                    break
-
-            sp_buff = []
-            angle_buff = []
-
-            for n in range(len(new_sp)):
-                x = new_sp[n][0]
-                y = new_sp[n][1]
-
-                d_min = 1e10
-                for l in label_list:
-                    d = np.sqrt(pow(x - sp_labels[l][0], 2) + pow(y - sp_labels[l][1], 2))
-                    if d > 0:
-                        d_min = min(d_min, d)
-                if d_min > 15:
-                    sp_buff.append(new_sp[n])
-                    angle_buff.append(new_angles[n])
-
-            new_sp = sp_buff
-            new_angles = angle_buff
-
-            if label_list:
-                m = max(label_list)
-            else:
-                m = 0
-
-            new_sp_dict = {l + m + 1: new_sp[l] for l in range(0, len(new_sp))}
-            new_angle_dict = {l + m + 1: new_angles[l] for l in range(0, len(new_angles))}
-
-            sp_labels.update(new_sp_dict)
-            angles.update(new_angle_dict)
-        #####################################################################################
 
         return sp_labels, ep_labels, angles, label_list
 
@@ -367,7 +156,6 @@ class LineDetector:
         with torch.no_grad():
             if with_segmentation:
                 seg_out = self.line_finder_seg(image_seg_in)['out'].detach()
-                # seg_out = nn.Sigmoid()(self.line_finder_seg(image_seg_in)['out']).detach()
                 seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
 
                 image_seg = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('text'),
@@ -383,25 +171,8 @@ class LineDetector:
                 label_list = start_points.keys()
                 sp_values = torch.tensor(list(start_points.values())).to(self.device_lr)
 
-                # start_points_dict, end_points_dict, angles_dict, label_list = self.extract_start_points_and_angles(
-                #     seg_out.cpu().detach().numpy())
-                # start_points = []
-                # end_points = {}
-                # angles = []
-                # for l in start_points_dict.keys():w
-                #     start_points.append(start_points_dict[l])
-                #     angles.append(angles_dict[l])
-                #     # if l in end_points.keys():
-                #     #     end_points.append(end_points_dict[l])
-                # start_points = torch.tensor(start_points)
-                # angles = torch.tensor(angles)
-                # sp_values = start_points#.to(self.device_lr)
-                #
-                # label_list = list(range(0, len(start_points)))
             else:
                 label_list = list(range(0, len(start_points)))
-                # start_points = {l: start_points_list[l] for l in label_list}
-                # angles = {l: angles_list[l] for l in label_list}
                 sp_values = start_points.to(self.device_lr)
                 start_points = {l: start_points[l] for l in label_list}
                 angles = {l: angles[l] for l in label_list}
@@ -425,7 +196,6 @@ class LineDetector:
                 if l in ep_label_list:
                     ep = torch.tensor(end_points[l]).to(self.device_lr)
 
-                    # TODO: add segmentation
                     if with_segmentation:
                         baseline, _, _, _ = self.line_rider(img=image_seg, box_size=box_size, sp=sp, angle_0=angle)
                     else:
@@ -433,7 +203,6 @@ class LineDetector:
 
                     baseline[-1] = ep
                 else:
-                    # TODO: add segmentation
                     if with_segmentation:
                         baseline, _, _, _ = self.line_rider(img=image_seg, box_size=box_size, sp=sp, angle_0=angle)
                     else:

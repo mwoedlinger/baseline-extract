@@ -2,7 +2,6 @@ import torch
 import torchvision
 import numpy as np
 import cv2
-from .normalize_baselines import normalize_baselines
 from .distances import get_median_diff
 
 
@@ -48,7 +47,6 @@ def draw_baselines(image: torch.tensor, baselines: torch.tensor, idx=-1):
 
     img_cv2 = img_cv2.astype(np.float64)
     comb = cv2.addWeighted(img_cv2, 0.7, img_cv1, 0.3, 0)
-    # comb = cv2.cvtColor(comb, cv2.COLOR_BGR2RGB)
     comb = torchvision.transforms.ToTensor()(comb).float()
 
     return comb
@@ -75,7 +73,6 @@ def draw_start_points(image: torch.tensor, label: torch.tensor, true_label: torc
             sp_true = true_label[:, 0:2].cpu()
     angles = label[:, 2].cpu()
     box_size = get_median_diff(sp)
-    #box_size = label[:, 3].cpu()
     confidences = label[:, -1].cpu()
 
     labels_img = np.zeros(img.shape)

@@ -15,7 +15,6 @@ def normalize_baselines(bl_par: list, segment_length: float):
 
     bl = bl_par
     new_bl = [bl[0]]
-    # new_bl = bl[0].unsqueeze(0).to(device)
 
     idx = 1  # Index of next baseline point of original label
     x, y = bl[0]
@@ -34,20 +33,16 @@ def normalize_baselines(bl_par: list, segment_length: float):
                 y = (1 - dist_ratio) * y + dist_ratio * y_n
 
                 new_bl.append(torch.tensor([x, y]))
-                # p = torch.tensor([[x,y]]).to(device)
-                # new_bl = torch.cat([new_bl, p], dim=0)
                 idx = i
                 break
             else:
                 if i == len(bl)-1:
                     new_bl.append(bl[-1]) #TODO: think of something better
-                    # new_bl = torch.cat([new_bl, bl[-1].unsqueeze(0).to(device)], dim=0)
                     done = True
         if done:
             break
 
     return torch.cat([l.unsqueeze(0) for l in new_bl], dim=0)
-    # return new_bl
 
 def compute_start_and_angle(baseline, idx, data_augmentation=False, box_size=None):
     """

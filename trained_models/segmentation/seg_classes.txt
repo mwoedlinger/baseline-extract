@@ -1,0 +1,6 @@
+bg;0;0;0
+text;125;125;125
+sp_ep_border;125;0;125
+baselines;0;255;0
+end_points;255;0;0
+start_points;0;0;255

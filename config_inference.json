@@ -1,20 +1,19 @@
 {
   "line_rider": {
-    "weights": "trained_models/line_rider/line_rider_v_03_no_seg.pt",
-    "with_segmentation": false,
+    "weights": "trained_models/line_rider/line_rider.pt",
+    "with_segmentation": true,
     "device": 2
   },
   "line_finder": {
     "use_GT_sp_and_angles": false,
-    "auto_generate_start_points": false,
-    "weights": "trained_models/segmentation/v22_GCN_1024_min_2.pt",
+    "weights": "trained_models/segmentation/seg_cBAD.pt",
     "device": 2,
-    "class_file": "trained_models/segmentation/classes.txt",
+    "class_file": "trained_models/segmentation/seg_classes.txt",
     "model": "GCN",
     "backbone": 50
   },
   "random_seed": 42,
-  "output_folder": "data/v_03_noSeg_segSP__2",
+  "output_folder": "data/pred_out",
   "data": {
     "input_folder": "data/cBAD-ICDAR2019/test",
     "img_size": 1024
