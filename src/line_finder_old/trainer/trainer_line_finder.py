@@ -4,11 +4,11 @@ import copy
 from tqdm import tqdm
 import torch
 from torch.utils.tensorboard import SummaryWriter
-from ..data.dataset_line_finder import DatasetLineFinder
-from ..utils.visualization import draw_start_points
-from ..model.line_finder import LineFinder
-from ..model.loss import LineFinderLoss
-from ..segmentation.gcn_model import GCN
+from src.line_finder_old.data.dataset_line_finder import DatasetLineFinder
+from src.utils.visualization import draw_start_points
+from src.line_finder_old.model.line_finder import LineFinder
+from src.model.loss import LineFinderLoss
+from src.segmentation.gcn_model import GCN
 
 
 class TrainerLineFinder:

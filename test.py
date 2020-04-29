@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 from src.trainer.trainer_line_rider import TrainerLineRider
-from src.trainer.trainer_line_finder import TrainerLineFinder
+
 
 def train(config, model_type, weights=None):
     if model_type == 'line_rider':

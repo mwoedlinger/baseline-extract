@@ -30,7 +30,6 @@ class TrainerLineRider:
         self.gpu = config['gpu']
         self.with_seg = config['with_seg']
         self.seg_gpu = config['segmentation_gpu']
-        self.batch_size = 1#config['batch_size']
         self.epochs = config['epochs']
         self.eval_epoch = config['eval_epoch']
         self.parameters = config['data']
@@ -51,8 +50,7 @@ class TrainerLineRider:
             self.num_classes = len(self.classes)
             self.segmentation_weights = config['segmentation_weights']
 
-            # self.seg_model = models.segmentation.deeplabv3_resnet50(num_classes=self.num_classes)
-            self.seg_model = GCN(n_classes=self.num_classes, resnet_depth=50)  # TODO: check config file for model type
+            self.seg_model = GCN(n_classes=self.num_classes, resnet_depth=50)
             self.seg_model.load_state_dict(torch.load(self.segmentation_weights, map_location=self.seg_device))
             self.seg_model.to(self.seg_device)
             self.seg_model.eval()
@@ -60,18 +58,19 @@ class TrainerLineRider:
         print('\n## Trainer settings:')
         print('exp name:    {}\n'
               'lr:          {}\n'
-              'side length: {}\n'
-              'gpu:         {}\n'.format(self.exp_name, self.lr, self.min_side, self.gpu))
+              'image size : {}\n'
+              'gpu:         {}\n'
+              'epochs:      {}\n'
+              'log dir:     {}\n'
+              'with seg:    {}\n'.format(self.exp_name, self.lr, self.min_side, self.gpu,
+                                         self.epochs, self.log_dir, self.with_seg))
         if self.with_seg:
-            print('with seg:    {}\n'
-                  'seg_gpu:     {}'.format(True, self.seg_device))
-        else:
-            print('with seg:    {}\n'.format(False))
+            print('seg_gpu:     {}\n'.format(self.seg_device))
 
     def get_model(self, weights):
         """
         Load the correct model,
-        :return: a list containing the model and the loss function (CrossEntropyLoss)
+        :return: a list containing the model and the loss functions
         """
 
         if not weights:
@@ -97,6 +96,7 @@ class TrainerLineRider:
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
 
         # Decay LR by a factor of 'gamma' every 'step_size' epochs
+        # Only used for SGD
         exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9)
 
         return [optimizer, exp_lr_scheduler]
@@ -109,14 +109,13 @@ class TrainerLineRider:
         """
 
         shuffle = {'train': True, 'eval': False, 'test': False}
-        batch_size_dict = {'train': self.batch_size, 'eval': 1, 'test': 1}
 
         image_datasets = {inf_type: DatasetLineRider(inf_type=inf_type,
                                                      parameters=self.parameters)
                           for inf_type in ['train', 'eval', 'test']}
 
         dataloaders = {inf_type: torch.utils.data.DataLoader(image_datasets[inf_type],
-                                                             batch_size=batch_size_dict[inf_type],
+                                                             batch_size=1,
                                                              shuffle=shuffle[inf_type],
                                                              num_workers=1)
                        for inf_type in ['train', 'eval', 'test']}
@@ -135,7 +134,7 @@ class TrainerLineRider:
         self.model.data_augmentation = True
 
         tensorboard_img_steps = 399
-        reset_counter_steps = 399
+        reset_counter_steps = 499
 
         running_loss = 0
         running_bl_loss = 0
@@ -158,9 +157,10 @@ class TrainerLineRider:
             if self.with_seg:
                 seg_image = batch['seg_image'].to(self.seg_device)
                 with torch.no_grad():
-                    seg_out = nn.Softmax()(self.seg_model(seg_image)['out']).detach().to(self.device)
+                    # seg_out = nn.Softmax(dim=0)(self.seg_model(seg_image)['out']).detach().to(self.device)
+                    seg_out = self.seg_model(seg_image)['out'].detach().to(self.device)
                     seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
-                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'),
+                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('text'),
                                                                     self.classes.index('baselines')], :, :]], dim=1).detach()
 
                 # with torch.no_grad():
@@ -189,7 +189,7 @@ class TrainerLineRider:
 
                     # Compute box size
                     box_size = int(get_smallest_distance(start_points[n], start_points))
-                    box_size = max(10, min(50, box_size)) + random.randint(-3, 10)#48
+                    box_size = max(10, min(48, box_size)) + random.randint(-3, 10)#48
                     # +5: Larger box sizes are more difficult => regularization
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
@@ -280,9 +280,10 @@ class TrainerLineRider:
             if self.with_seg:
                 seg_image = batch['seg_image'].to(self.seg_device)
                 with torch.no_grad():
-                    seg_out = nn.Softmax()(self.seg_model(seg_image)['out']).detach().to(self.device)
+                    # seg_out = nn.Softmax(dim=0)(self.seg_model(seg_image)['out']).detach().to(self.device)
+                    seg_out = self.seg_model(seg_image)['out'].detach().to(self.device)
                     seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
-                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
+                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('text'), self.classes.index('baselines')], :, :]], dim=1).detach()
 
                 # with torch.no_grad():
                 #     seg_out = nn.Softmax()(self.seg_model(image.to(self.seg_device))['out']).detach().to(self.device)
@@ -307,7 +308,7 @@ class TrainerLineRider:
                 for n in range(number_of_baselines):
                     # Compute box size
                     box_size = int(get_smallest_distance(start_points[n], start_points))
-                    box_size = max(10, min(50, box_size))
+                    box_size = max(10, min(48, box_size))
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]
@@ -366,7 +367,6 @@ class TrainerLineRider:
 
         return loss, eval_steps
 
-
     def test(self):
         """
         Tests the model on the test set and prints the results.
@@ -393,9 +393,10 @@ class TrainerLineRider:
             if self.with_seg:
                 seg_image = batch['seg_image'].to(self.seg_device)
                 with torch.no_grad():
-                    seg_out = nn.Softmax()(self.seg_model(seg_image)['out']).detach().to(self.device)
+                    # seg_out = nn.Softmax(dim=0)(self.seg_model(seg_image)['out']).detach().to(self.device)
+                    seg_out = self.seg_model(seg_image)['out'].detach().to(self.device)
                     seg_out = nn.functional.interpolate(seg_out, size=image.size()[2:], mode='nearest')
-                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('end_points'), self.classes.index('baselines')], :, :]], dim=1).detach()
+                image = torch.cat([image[:, 0:1, :, :], seg_out[:, [self.classes.index('text'), self.classes.index('baselines')], :, :]], dim=1).detach()
 
                 # with torch.no_grad():
                 #     seg_out = nn.Softmax()(self.seg_model(image.to(self.seg_device))['out']).detach().to(self.device)
@@ -416,7 +417,7 @@ class TrainerLineRider:
                 for n in range(number_of_baselines):
                     # Compute box size
                     box_size = int(get_smallest_distance(start_points[n], start_points))
-                    box_size = max(10, min(50, box_size))
+                    box_size = max(10, min(48, box_size))
 
                     # Normalise the baselines such that each line segment has the length 'box_size'
                     bl = baselines[n][:bl_lengths[n]]
@@ -467,7 +468,6 @@ class TrainerLineRider:
         print('length_loss: {}\n'.format(length_loss))
 
         return loss, bl_loss, end_loss, length_loss
-
 
     def train(self):
         """

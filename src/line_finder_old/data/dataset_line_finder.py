@@ -5,9 +5,9 @@ from PIL import Image
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
-from .xml_parser import XMLParser
-from ..utils.distances import d2
-from ..utils.normalize_baselines import compute_start_and_angle
+from src.data.xml_parser import XMLParser
+from src.utils.distances import d2
+from src.utils.normalize_baselines import compute_start_and_angle
 
 
 class DatasetLineFinder(Dataset):

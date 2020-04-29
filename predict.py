@@ -17,6 +17,8 @@ def create_lst_files(gt_folder = os.path.join('data', 'evaluation_java_app', 'gt
 
         print('Found {} files in {} folder.'.format(len(file_list), folder))
 
+        file_list = [f.replace('data/', '') for f in file_list if '2434' not in f]
+
         text_string = '\n'.join(file_list)
         filename = os.path.join('data', os.path.basename(folder) + '.lst')
         with open(filename, 'w') as txt_file:
@@ -51,7 +53,6 @@ def predict(config):
         bl_string = create_prediction_string(baselines, width, height, config['data']['img_size'])
 
         text_name = os.path.basename(filename).split('.')[0]+'.txt'
-        text_name.replace('data', '').replace('/', '\\')
         with open(os.path.join(output_folder, text_name), 'w') as txt_file:
             txt_file.writelines(bl_string)
 

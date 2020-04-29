@@ -70,7 +70,6 @@ class DatasetLineRider(Dataset):
                                               ])
         self.seg_transforms = transforms.Compose([transforms.Resize(self.min_side, #self.max_side),
                                                                 interpolation=PIL.Image.NEAREST),
-                                              transforms.Grayscale(num_output_channels=3),
                                               transforms.ToTensor(),
                                               transforms.Normalize(mean=[0.7219, 0.6874, 0.6260],
                                                                    std=[0.2174, 0.2115, 0.1989])
